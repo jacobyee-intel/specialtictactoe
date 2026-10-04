@@ -8,7 +8,6 @@ import { SpaceDiagram } from '../diagrams/SpaceDiagram';
 import { README_URL, VIDEO_URL } from '../links';
 import { navigate } from '../router';
 import {
-  cellCount,
   clampForTopology,
   fieldRange,
   formErrors,
@@ -16,7 +15,6 @@ import {
   setField,
   startBlocker,
   stepField,
-  winningLineCount,
   type NumberField,
   type StartInput,
 } from '../startForm';
@@ -42,45 +40,6 @@ const STEPPERS: readonly { field: NumberField; name: string; label: string; bigS
   { field: 'l', name: 'L', label: 'Round limit', bigStep: 5 },
 ];
 
-const fmt = new Intl.NumberFormat('en-US');
-
-function Fact(props: { lead: string; children: string }) {
-  return (
-    <p>
-      <span class="t-bold">{props.lead}.</span> {props.children}
-    </p>
-  );
-}
-
-function SpaceFacts({ input, nOk }: { input: StartInput; nOk: boolean }) {
-  const info = TOPOLOGY_INFO[input.topology];
-  const lines = winningLineCount(input);
-  return (
-    <div class="space-facts">
-      <p class="t-body measure">{info.blurb}</p>
-      <div class="t-caption space-facts-list">
-        <Fact lead="Orientable">{info.orientable ? 'Yes.' : 'No.'}</Fact>
-        <Fact lead="Holonomy">{`${info.holonomy}.`}</Fact>
-        <Fact lead="Curvature">{`${info.curvature}.`}</Fact>
-      </div>
-      <dl class="stats">
-        <div>
-          <dt class="t-label">Cells</dt>
-          <dd class="t-heading t-num">
-            {nOk ? fmt.format(cellCount(input.topology, input.n)) : '–'}
-          </dd>
-        </div>
-        <div>
-          <dt class="t-label">Winning lines</dt>
-          <dd class="t-heading t-num" aria-live="polite">
-            {lines === null ? '–' : fmt.format(lines)}
-          </dd>
-        </div>
-      </dl>
-    </div>
-  );
-}
-
 export function StartScreen() {
   const input = form.value;
   const errors = formErrors(input);
@@ -105,11 +64,6 @@ export function StartScreen() {
             <br />
             Spaces
           </h1>
-          <p class="t-body measure start-pitch">
-            Three-dimensional tic-tac-toe on boards that wrap around, twist and mirror. Split a game
-            into parallel timelines, send marks back in time or across to another board, and be the
-            first to win W timelines.
-          </p>
 
           <section class="form-section" aria-labelledby="space-heading">
             <h2 id="space-heading" class="t-label section-label">
@@ -124,7 +78,6 @@ export function StartScreen() {
                 onChange={(id: TopologyId) => update(clampForTopology(form.value, id))}
               />
             </div>
-            <SpaceFacts input={input} nOk={errors.n === undefined} />
           </section>
 
           <section class="form-section" aria-labelledby="params-heading">

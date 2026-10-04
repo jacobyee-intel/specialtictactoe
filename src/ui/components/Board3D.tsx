@@ -376,9 +376,6 @@ export function Board3D(props: {
         <p class={`t-caption t-num view3d-caption ${props.caption === null ? 't-grey' : ''}`}>
           {props.caption ?? 'Hover a cell to see its coordinates and lines.'}
         </p>
-        {geometryCaptions(topology, props.input, ghosts, net, mod).map((c) => (
-          <Caption key={c.lead} lead={c.lead} text={c.text} class="view3d-geometry" />
-        ))}
       </div>
     </section>
   );
@@ -394,56 +391,3 @@ function coordText(topology: Topology, cell: CellId): string {
   return `(${q.join(', ')})`;
 }
 
-/** The captions that explain what the picture shows; every claim is about this space. */
-function geometryCaptions(
-  topology: Topology,
-  input: SceneInput,
-  ghosts: GhostChoice,
-  net: boolean,
-  mod: RenderModule | null,
-): { lead: string; text: string }[] {
-  if (topology instanceof TesseractSurface) {
-    const facets = input.win?.cells.map((c) => topology.facet(c).index) ?? [];
-    const crosses = facets.some((f, i) => i > 0 && f !== facets[i - 1]);
-    if (net) {
-      const out = [
-        {
-          lead: 'Net.',
-          text: 'The eight cubes unfolded into 3D, each at its true shape and size. Faces that touch here are glued, and so are faces with the same letter: in 4D they are one face.',
-        },
-      ];
-      if (crosses) {
-        out.push({
-          lead: 'Win line.',
-          text: 'Drawn in each cube it passes through. Where it is cut, the green letters show where it leaves one cube and enters the next.',
-        });
-      }
-      return out;
-    }
-    const out = [
-      {
-        lead: 'Edges.',
-        text: 'The black lines are where three cubes meet, at 270°, not 360°. Space is curved on these edges, so lines stop.',
-      },
-    ];
-    if (crosses) {
-      out.push({
-        lead: 'Win line.',
-        text: 'It bends where it passes from one cube into the next. Straight on the surface: unfold the two cubes and it is a straight line.',
-      });
-    }
-    return out;
-  }
-  if (!(topology instanceof CubicQuotient) || !topology.wrapped) {
-    return [{ lead: 'Flat cube.', text: 'An ordinary bounded box: lines stop at its walls.' }];
-  }
-  if (ghosts === 'off' || mod === null) {
-    return [
-      {
-        lead: 'One cube.',
-        text: 'Lines that leave through a face come back through the glued face. Turn on ghost copies to look around the space from inside.',
-      },
-    ];
-  }
-  return [{ lead: 'Inside view.', text: mod.coverCaption(topology) }];
-}

@@ -271,7 +271,6 @@ interface Description {
   readonly label: string;
   /** Legend rows: key, subject, how it is glued. */
   readonly rows: readonly (readonly [string, string, string])[];
-  readonly caption: string;
 }
 
 function describe(id: TopologyId): Description {
@@ -280,22 +279,18 @@ function describe(id: TopologyId): Description {
     return {
       label: `${name}: a plain cube whose faces are walls.`,
       rows: [['', 'All faces', 'boundary']],
-      caption: 'The whole space. Lines stop at the walls.',
     };
   }
   if (id === 'tesseract') {
     return {
       label: `${name}: an inner cube inside an outer cube with matching corners joined, 8 cubes in all.`,
       rows: [['', '8 cubes', 'edges blocked']],
-      caption:
-        'Schlegel diagram of the hypercube surface: an inner cube, an outer cube and six between, glued face to face. Lines stop at the edges, where three cubes meet.',
     };
   }
   const pairs = gluedPairs(id);
   return {
     label: `${name}: ${pairs.map((p) => `faces ${p.letter} glued ${GLUING_CAPTION[p.kind]}`).join(', ')}.`,
     rows: pairs.map((p) => [p.letter, `${p.axis} faces`, GLUING_CAPTION[p.kind]]),
-    caption: 'Fundamental domain. Faces with matching arrows are glued together.',
   };
 }
 
@@ -321,7 +316,7 @@ function useUnitsPerPixel(): [RefObject<SVGSVGElement | null>, number] {
 }
 
 export function SpaceDiagram({ topology }: { topology: TopologyId }) {
-  const { label, rows, caption } = describe(topology);
+  const { label, rows } = describe(topology);
   const [svgRef, unit] = useUnitsPerPixel();
   let drawing: JSX.Element;
   if (topology === 'flat') drawing = <FlatCube />;
@@ -351,7 +346,6 @@ export function SpaceDiagram({ topology }: { topology: TopologyId }) {
             </div>
           ))}
         </dl>
-        <p class="t-caption measure">{caption}</p>
       </figcaption>
     </figure>
   );
