@@ -4,3 +4,8 @@ coverage
 .DS_Store
 *.log
 .vite
+
+# Local environment tooling (not part of the project)
+.copilot.run.cmd
+.cth.ai_plugins/
+.cth_setup_files/

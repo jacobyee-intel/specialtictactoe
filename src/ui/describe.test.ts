@@ -8,6 +8,7 @@ import {
   eventSummary,
   keepCoordsTogether,
   missingSentence,
+  nodeAriaLabel,
   originSentence,
   originSummary,
   resultSentence,
@@ -256,5 +257,30 @@ describe('eventSentence and eventSummary', () => {
     expect(missingSentence(0)).toBeNull();
     expect(missingSentence(1)).toBe('1 timeline still needs an action');
     expect(missingSentence(2)).toBe('2 timelines still need an action');
+  });
+});
+
+describe('nodeAriaLabel', () => {
+  it('names the node, its step, the mover and the status', () => {
+    const g = scenario();
+    const [n1] = g.line(g.c(1, 1, 1));
+    expect(nodeAriaLabel(g.state, 0)).toBe('Node 0, step 0, Player 1 to move, history');
+    expect(nodeAriaLabel(g.state, n1 as number)).toBe(
+      'Node 1, step 1, Player 2 to move, needs action',
+    );
+    expect(nodeAriaLabel(g.state, n1 as number, true)).toBe(
+      'Node 1, step 1, Player 2 to move, needs action, valid target',
+    );
+    const [a, b] = g.split(n1 as number);
+    expect(nodeAriaLabel(g.state, a)).toBe('Node 2, step 2, Player 1 to move, created this turn');
+    g.endTurn();
+    g.transfer(a, g.c(1, 1, 1), b, g.c(0, 0, 0));
+    expect(nodeAriaLabel(g.state, b)).toBe(
+      'Node 3, step 2, Player 1 to move, needs action, received a mark',
+    );
+    const won = g.place(b, g.c(2, 2, 2));
+    expect(nodeAriaLabel(g.state, won)).toBe('Node 5, step 3, won by Player 1, this turn');
+    g.endTurn();
+    expect(nodeAriaLabel(g.state, won)).toBe('Node 5, step 3, won by Player 1');
   });
 });

@@ -1,17 +1,8 @@
 import type { HeadStatus, Player } from '@/engine';
+import { STATUS_LABELS } from '../describe';
 import { COLORS, playerColor, playerName } from '../tokens';
 
-/** Accessible names for the node statuses (also the legend labels). */
-export const STATUS_LABELS: Readonly<Record<HeadStatus, string>> = {
-  needsAction: 'Needs action',
-  acted: 'Acted this turn',
-  waiting: 'Waiting',
-  history: 'History',
-  won: 'Won',
-  drawn: 'Drawn',
-  frozen: 'Decided this turn',
-  draftCreated: 'Created this turn',
-};
+export { STATUS_LABELS };
 
 interface StatusGlyphProps {
   readonly status: HeadStatus;
@@ -27,19 +18,34 @@ interface StatusGlyphProps {
   readonly incoming?: Player | null;
   /** The node being viewed: a 4 px bar underneath. */
   readonly current?: boolean;
+  /**
+   * Draw in a 32 × 32 box instead of 40 × 40 (the legend): the target ring hugs the circle and
+   * the view bar sits right under it, so nothing leaves the box.
+   */
+  readonly compact?: boolean;
   readonly title?: string;
 }
 
 const R = 12;
-const BOX = 40;
-const C = BOX / 2;
+/** The glyph's box: room around the 24 px circle for the target ring, badge and view bar. */
+export const GLYPH_BOX = 40;
+/** The compact box (legend rows). */
+export const COMPACT_BOX = 32;
 
 /**
- * A multiverse node in the design-system §7 vocabulary, as a 24 px circle in a 40 px box (room
- * for the target ring, the incoming badge and the current-view bar). Reused by the Stage 5 graph.
+ * The drawing of {@link StatusGlyph} without its `<svg>` wrapper, in a 40 × 40 box with the node
+ * centre at (20, 20) (32 × 32 and (16, 16) when compact). The graph places it in its own SVG.
  */
-export function StatusGlyph(props: StatusGlyphProps) {
+export function StatusGlyphBody(props: Omit<StatusGlyphProps, 'title'>) {
   const { status, seat, mover, winner = null, target = false, incoming = null } = props;
+  const compact = props.compact ?? false;
+  const BOX = compact ? COMPACT_BOX : GLYPH_BOX;
+  const C = BOX / 2;
+  // Ring radius (3 px stroke) and crosshair tick length: the outer edge stays inside the box.
+  const ringR = compact ? R + 2.5 : R + 4.5;
+  const tick = compact ? 4 : 6;
+  // The badge's top-left corner.
+  const badge = compact ? { x: BOX - 9, y: 1 } : { x: BOX - 11, y: 2 };
   const seatColor = playerColor(seat ?? mover);
   let body;
   switch (status) {
@@ -124,7 +130,55 @@ export function StatusGlyph(props: StatusGlyphProps) {
       );
       break;
   }
-  const label = props.title ?? STATUS_LABELS[status];
+  return (
+    <>
+      {target && (
+        <g stroke={COLORS.black} fill="none">
+          <circle cx={C} cy={C} r={ringR} stroke-width={3} />
+          <path
+            d={`M${C} 0V${tick}M${C} ${BOX - tick}V${BOX}M0 ${C}H${tick}M${BOX - tick} ${C}H${BOX}`}
+            stroke-width={1}
+          />
+        </g>
+      )}
+      {body}
+      {incoming !== null && (
+        <g aria-label={`Received a mark for ${playerName(incoming)}`}>
+          {incoming === 0 ? (
+            <rect
+              x={badge.x}
+              y={badge.y}
+              width={8}
+              height={8}
+              fill={COLORS.white}
+              stroke={playerColor(0)}
+              stroke-width={2}
+            />
+          ) : (
+            <circle
+              cx={badge.x + 4}
+              cy={badge.y + 4}
+              r={4}
+              fill={COLORS.white}
+              stroke={playerColor(1)}
+              stroke-width={2}
+            />
+          )}
+        </g>
+      )}
+      {props.current && <rect x={C - R} y={BOX - 4} width={2 * R} height={4} fill={COLORS.black} />}
+    </>
+  );
+}
+
+/**
+ * A multiverse node in the design-system §7 vocabulary, as a 24 px circle in a 40 px box (room
+ * for the target ring, the incoming badge and the current-view bar), or compact in 32 px. The
+ * list and the legend use it; the graph draws the same {@link StatusGlyphBody}.
+ */
+export function StatusGlyph(props: StatusGlyphProps) {
+  const label = props.title ?? STATUS_LABELS[props.status];
+  const BOX = props.compact ? COMPACT_BOX : GLYPH_BOX;
   return (
     <svg
       class="status-glyph"
@@ -135,41 +189,7 @@ export function StatusGlyph(props: StatusGlyphProps) {
       aria-label={label}
     >
       <title>{label}</title>
-      {target && (
-        <g stroke={COLORS.black} fill="none">
-          <circle cx={C} cy={C} r={R + 4.5} stroke-width={3} />
-          <path
-            d={`M${C} 0V6M${C} ${BOX - 6}V${BOX}M0 ${C}H6M${BOX - 6} ${C}H${BOX}`}
-            stroke-width={1}
-          />
-        </g>
-      )}
-      {body}
-      {incoming !== null && (
-        <g aria-label={`Received a mark for ${playerName(incoming)}`}>
-          {incoming === 0 ? (
-            <rect
-              x={BOX - 11}
-              y={2}
-              width={8}
-              height={8}
-              fill={COLORS.white}
-              stroke={playerColor(0)}
-              stroke-width={2}
-            />
-          ) : (
-            <circle
-              cx={BOX - 7}
-              cy={6}
-              r={4}
-              fill={COLORS.white}
-              stroke={playerColor(1)}
-              stroke-width={2}
-            />
-          )}
-        </g>
-      )}
-      {props.current && <rect x={C - R} y={BOX - 4} width={2 * R} height={4} fill={COLORS.black} />}
+      <StatusGlyphBody {...props} />
     </svg>
   );
 }

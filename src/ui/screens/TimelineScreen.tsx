@@ -21,7 +21,7 @@ import {
   type Zone,
 } from '../board2d/layout';
 import { cubeFilter, openLinesFor, showHalos, showOpenLines, showThreats } from '../board2d/prefs';
-import { act, clearDraft, flow, flowEvent, undoAction } from '../controller';
+import { act, clearDraft, flow, flowEvent, lastViewed, undoAction } from '../controller';
 import { coordLabel } from '../describe';
 import type { Flow } from '../flow';
 import { boardOf } from '../overlays';
@@ -43,24 +43,10 @@ import {
   type TimelineMode,
 } from '../timelineModel';
 import { playerName } from '../tokens';
+import { useSize } from '../useSize';
 
 /** Until the zone is measured, assume the right half of a 1440 × 900 window. */
 const FALLBACK_ZONE: Zone = { width: 660, height: 520 };
-
-/** The size of an element's content box, tracked with a ResizeObserver. */
-function useSize(ref: { current: HTMLElement | null }): Zone | null {
-  const [size, setSize] = useState<Zone | null>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (el === null) return;
-    const measure = () => setSize({ width: el.clientWidth, height: el.clientHeight });
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref]);
-  return size;
-}
 
 const CURSOR_KEYS = new Set([
   'ArrowLeft',
@@ -230,6 +216,7 @@ export function TimelineScreen({ node, readOnly }: { node: number; readOnly: boo
     setSelection(NO_SELECTION);
     setCursor(null);
     setSplitPreview(false);
+    lastViewed.value = node;
   }, [node]);
 
   // The node can vanish (undo removed a draft node): go back to the multiverse.

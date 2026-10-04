@@ -13,6 +13,7 @@ import {
   type CellId,
   type EngineEvent,
   type GameState,
+  type HeadStatus,
   type NodeId,
   type Player,
   type Result,
@@ -139,6 +140,38 @@ export function originSummary(state: GameState, id: NodeId): string {
     case 'sendBack':
       return `Send-back at ${at(o.cell)} for #${o.terminal}`;
   }
+}
+
+/** Names for the node statuses: the legend labels and the glyphs' accessible names. */
+export const STATUS_LABELS: Readonly<Record<HeadStatus, string>> = {
+  needsAction: 'Needs action',
+  acted: 'Acted this turn',
+  waiting: 'Waiting',
+  history: 'History',
+  won: 'Won',
+  drawn: 'Drawn',
+  frozen: 'Decided this turn',
+  draftCreated: 'Created this turn',
+};
+
+/**
+ * The accessible name of a graph node, e.g. "Node 12, step 6, Player 2 to move, needs action"
+ * or "Node 8, step 5, won by Player 1". `target` adds "valid target" in picking mode.
+ */
+export function nodeAriaLabel(state: GameState, id: NodeId, target = false): string {
+  const node = nodeAt(state.preview, id);
+  const status = headStatus(state, id);
+  const t = node.terminal;
+  const parts = [`Node ${id}`, `step ${node.step}`];
+  if (t === null) {
+    parts.push(toMoveLabel(node), STATUS_LABELS[status].toLowerCase());
+  } else {
+    parts.push(t.kind === 'win' ? `won by ${playerName(t.winner)}` : 'drawn');
+    if (status === 'frozen') parts.push('this turn');
+  }
+  if (t === null && incomingOf(state, id) !== null) parts.push('received a mark');
+  if (target) parts.push('valid target');
+  return parts.join(', ');
 }
 
 /**

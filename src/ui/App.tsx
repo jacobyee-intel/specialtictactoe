@@ -8,7 +8,8 @@ const COLUMNS = Array.from({ length: 12 }, (_, i) => i);
 
 /**
  * The debug grid overlay (design-system §4): `?grid` in the URL turns it on, and in dev the G
- * key toggles it (except while typing in a field).
+ * key toggles it (except while typing in a field, and on the multiverse, where G switches
+ * between Graph and List).
  */
 function useGridOverlay(): void {
   useEffect(() => {
@@ -19,8 +20,10 @@ function useGridOverlay(): void {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing = target?.closest('input, textarea, [contenteditable]') != null;
+      // The multiverse uses G to switch Graph/List; it claims the key with preventDefault.
       if (
         event.key.toLowerCase() !== 'g' ||
+        event.defaultPrevented ||
         typing ||
         event.ctrlKey ||
         event.metaKey ||

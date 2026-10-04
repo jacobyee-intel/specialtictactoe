@@ -48,6 +48,9 @@ export const handoff = signal<Player | null>(null);
 /** What the last resolution did, shown in the message area until dismissed or replaced. */
 export const notice = signal<string | null>(null);
 
+/** The timeline the player looked at last: the graph marks it with the current-view bar. */
+export const lastViewed = signal<NodeId | null>(null);
+
 /** Index into `state.events` where the turn being resolved began (for the summary). */
 let turnStart = 0;
 
@@ -69,6 +72,7 @@ function resetTurnUi(): void {
     picked.value = IDLE;
     handoff.value = null;
     notice.value = null;
+    lastViewed.value = null;
   });
   turnStart = 0;
 }
@@ -112,6 +116,14 @@ function resolve(op: (state: GameState) => ActionResult): boolean {
   });
   navigate({ screen: 'multiverse' });
   return true;
+}
+
+/**
+ * Open a node's timeline. It is read-only unless the node needs an action from the hot seat;
+ * `timelineMode` decides that from the engine, so every caller gets the same rule.
+ */
+export function openTimeline(node: NodeId): void {
+  navigate({ screen: 'timeline', node, readOnly: false });
 }
 
 /** Add a draft action (place, split) and return to the multiverse. */
