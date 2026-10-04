@@ -104,6 +104,23 @@ export function cellCentre4(t: TesseractSurface, cell: CellId): Vec4 {
 }
 
 /**
+ * The 8 corners of a cell in R⁴: its 3 free coordinates at centre ± ½, the fixed one on the
+ * facet hyperplane. Corner i takes the + side on the k-th free axis when bit k of i is set.
+ */
+export function cellCorners4(t: TesseractSurface, cell: CellId): Vec4[] {
+  const c = cellCentre4(t, cell);
+  const { axis } = t.facet(cell);
+  const free = [0, 1, 2, 3].filter((k) => k !== axis);
+  const out: Vec4[] = [];
+  for (let i = 0; i < 8; i++) {
+    const p = [...c];
+    free.forEach((k, bit) => (p[k] = (p[k] as number) + ((i >> bit) & 1 ? 0.5 : -0.5)));
+    out.push(p as unknown as Vec4);
+  }
+  return out;
+}
+
+/**
  * The 32 edges of the hypercube (where three cubes meet and lines are blocked), as pairs of
  * vertices in R⁴: each vertex is (±h, ±h, ±h, ±h), and an edge flips one coordinate.
  */
@@ -116,6 +133,17 @@ export function hypercubeEdges4(n: number): [Vec4, Vec4][] {
     for (let k = 0; k < 4; k++) if (!((v >> k) & 1)) edges.push([vertex(v), vertex(v | (1 << k))]);
   }
   return edges;
+}
+
+/**
+ * The radius of a ball that holds the projection of the whole hypercube in every orientation.
+ * A vertex is at distance r = N from the centre; at angle θ from the w axis it projects at
+ * c·r·sin θ / (c − r·cos θ) with c = cameraW, which is largest when cos θ = r / c, giving
+ * r·c / √(c² − r²). The camera is fitted to this ball, so turning in 4D never leaves the view.
+ */
+export function schlegelRadius(n: number): number {
+  const c = CAMERA_W_FACTOR * n;
+  return (n * c) / Math.sqrt(c * c - n * n);
 }
 
 /**

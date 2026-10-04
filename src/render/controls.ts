@@ -19,6 +19,15 @@ export const FIT_MARGIN = 0.15;
 /** From the front, right and above: all three axes and the top slice are visible. */
 export const DEFAULT_VIEW_DIR: Vec3 = [1.1, 0.95, 1.6];
 
+/**
+ * With ghost copies on, from higher up: the F of the copy above lies on the fundamental cube's
+ * top face and the F of the copy below one cube under its floor, and both must read clearly.
+ */
+export const COVER_VIEW_DIR: Vec3 = [1.0, 1.75, 1.45];
+
+/** The net (its long column left to right): mostly from the front, a little above and right. */
+export const NET_VIEW_DIR: Vec3 = [0.45, 0.8, 1.6];
+
 export interface CameraFit {
   readonly position: Vec3;
   readonly target: Vec3;
@@ -64,11 +73,21 @@ export function corners(b: Bounds): Vec3[] {
  * |x| ≤ (d − z) · tan(fov/2) / (1 + margin), so d ≥ z + |x| (1 + margin) / tan(fov/2), per axis.
  */
 export function fitCube(bounds: Bounds, opts: FitOptions): CameraFit {
+  return fitPoints(corners(bounds), opts);
+}
+
+/**
+ * Frame a set of points the same way: the camera looks at the centre of their bounding box and
+ * every point projects inside the viewport shrunk by the margin.
+ */
+export function fitPoints(points: readonly Vec3[], opts: FitOptions): CameraFit {
   const { aspect, fovDeg = FOV, margin = FIT_MARGIN } = opts;
+  const lo = [0, 1, 2].map((k) => Math.min(...points.map((p) => p[k] as number)));
+  const hi = [0, 1, 2].map((k) => Math.max(...points.map((p) => p[k] as number)));
   const target: Vec3 = [
-    (bounds.min[0] + bounds.max[0]) / 2,
-    (bounds.min[1] + bounds.max[1]) / 2,
-    (bounds.min[2] + bounds.max[2]) / 2,
+    ((lo[0] as number) + (hi[0] as number)) / 2,
+    ((lo[1] as number) + (hi[1] as number)) / 2,
+    ((lo[2] as number) + (hi[2] as number)) / 2,
   ];
   const back = normalise(opts.direction ?? DEFAULT_VIEW_DIR);
   const right = normalise(cross([-back[0], -back[1], -back[2]], [0, 1, 0]));
@@ -77,7 +96,7 @@ export function fitCube(bounds: Bounds, opts: FitOptions): CameraFit {
   const tanH = tanV * aspect;
   let distance = 0;
   let radius = 0;
-  for (const c of corners(bounds)) {
+  for (const c of points) {
     const rel = sub(c, target);
     const z = dot(rel, back);
     distance = Math.max(

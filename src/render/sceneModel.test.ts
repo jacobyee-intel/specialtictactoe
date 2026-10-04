@@ -8,7 +8,7 @@ import {
   type Topology,
   type TopologyId,
 } from '@/geometry';
-import { buildSceneModel, toWorld, type SceneInput, type Vec3 } from './sceneModel';
+import { buildSceneModel, netToWorld, toWorld, type SceneInput, type Vec3 } from './sceneModel';
 
 function input(topology: Topology, extra: Partial<SceneInput> = {}): SceneInput {
   return {
@@ -59,7 +59,8 @@ describe('buildSceneModel: cubic spaces', () => {
       expect(model.wires.length).toBe(3 * (n + 1) ** 2 * 6);
       expect(model.outline.length).toBe(12 * 6);
       expect(model.bounds).toEqual({ min: [-n / 2, -n / 2, -n / 2], max: [n / 2, n / 2, n / 2] });
-      expect(model.key).toBe(`flat/${n}`);
+      expect(model.key).toBe(`flat/${n}/cube`);
+      expect(model.mode).toBe('cube');
       const first = model.cells[0]?.pos as Vec3;
       expect(first).toEqual(toWorld([0.5 - n / 2, 0.5 - n / 2, 0.5 - n / 2]));
     }
@@ -163,9 +164,16 @@ describe('buildSceneModel: tesseract', () => {
     const topology = createTopology('tesseract', n);
     const model = buildSceneModel(input(topology));
     expect(model.cells).toHaveLength(8 * n ** 3);
-    // The 32 edges of the hypercube as the outline; a grid per facet as the wires.
+    // The 32 edges of the hypercube as the outline; no cell grids until a cube is chosen.
     expect(model.outline.length).toBe(32 * 6);
-    expect(model.wires.length).toBe(8 * 3 * (n + 1) ** 2 * 6);
+    expect(model.wires.length).toBe(0);
+    expect(model.selectedOutline).toBeNull();
+    const chosen = buildSceneModel(input(topology), { facet: 3, hoverFacet: 5 });
+    expect(chosen.wires.length).toBe(2 * 3 * (n + 1) ** 2 * 6);
+    expect(chosen.selectedOutline?.length).toBe(12 * 6);
+    expect(buildSceneModel(input(topology), { facet: 3, hoverFacet: 3 }).wires.length).toBe(
+      3 * (n + 1) ** 2 * 6,
+    );
     const near = model.cells.filter((c) => topology.facet(c.cell).index === 7);
     const far = model.cells.filter((c) => topology.facet(c.cell).index === 6);
     const extent = (cs: typeof near) => Math.max(...cs.flatMap((c) => c.pos.map(Math.abs)));
@@ -196,5 +204,168 @@ describe('buildSceneModel: tesseract', () => {
       bends += ridges;
     }
     expect(bends).toBeGreaterThan(0);
+  });
+});
+
+describe('buildSceneModel: ghost copies (cover view)', () => {
+  it.each([
+    ['faces', 6],
+    ['all', 26],
+  ] as const)(
+    '%s: one ghost per cell and copy, ghost marks from the source cells',
+    (range, copies) => {
+      const n = 4;
+      const topology = createTopology('tetracosm', n);
+      const board = new Uint8Array(topology.cellCount);
+      board[0] = 1;
+      board[21] = 2;
+      const model = buildSceneModel(input(topology, { board }), { ghosts: range });
+      expect(model.mode).toBe('cover');
+      expect(model.key).toBe(`tetracosm/4/cover/${range}`);
+      expect(model.ghosts?.cells).toHaveLength(copies * n ** 3);
+      expect(model.ghosts?.marks).toHaveLength(2 * copies);
+      expect(model.ghosts?.outlines.length).toBe(copies * 12 * 6);
+      expect(model.landmark).toHaveLength(copies + 1);
+      // Ghosts lie outside the fundamental cube; the fundamental cells inside it.
+      for (const g of model.ghosts?.cells ?? []) {
+        expect(Math.max(...g.pos.map(Math.abs))).toBeGreaterThan(n / 2);
+      }
+      // The fit includes the F of the copy below (under the floor).
+      expect(Math.min(...model.fitPoints.map((p) => p[1]))).toBeLessThan(-n);
+    },
+  );
+
+  it('is off for the flat cube and when ghosts are off', () => {
+    expect(buildSceneModel(input(createTopology('flat', 3)), { ghosts: 'all' }).ghosts).toBeNull();
+    const off = buildSceneModel(input(createTopology('torus3', 3)), { ghosts: 'off' });
+    expect(off.ghosts).toBeNull();
+    expect(off.landmark).toEqual([]);
+  });
+
+  it('the F above is turned (tetracosm) or mirrored (amphicosm) in the scene too', () => {
+    // Read the F back from the world boxes: world y is up, so the floor normal is +y.
+    const frameOf = (boxes: readonly { min: Vec3; max: Vec3 }[]) => {
+      const c = (b: { min: Vec3; max: Vec3 }) =>
+        b.min.map((v, k) => (v + (b.max[k] as number)) / 2);
+      const [stem, top] = boxes as [{ min: Vec3; max: Vec3 }, { min: Vec3; max: Vec3 }];
+      const ext = [0, 2].map((k) => (stem.max[k] as number) - (stem.min[k] as number));
+      const long = ext[0]! > ext[1]! ? 0 : 2;
+      const across = long === 0 ? 2 : 0;
+      const up = [0, 0, 0];
+      const right = [0, 0, 0];
+      up[long] = Math.sign((c(top)[long] as number) - (c(stem)[long] as number));
+      right[across] = Math.sign((c(top)[across] as number) - (c(stem)[across] as number));
+      // Handedness seen from above (+y): (right × up)·y.
+      return {
+        up,
+        right,
+        hand: (right[2] as number) * (up[0] as number) - (right[0] as number) * (up[2] as number),
+      };
+    };
+    for (const [id, turned, hand] of [
+      ['torus3', false, 1],
+      ['tetracosm', true, 1],
+      ['amphicosm1', false, -1],
+    ] as const) {
+      const model = buildSceneModel(input(createTopology(id, 4)), { ghosts: 'faces' });
+      const base = frameOf(model.landmark[0]?.boxes ?? []);
+      const above = frameOf(model.landmark.find((c) => c.offset.join() === '0,0,1')?.boxes ?? []);
+      expect(base.hand).toBeGreaterThan(0);
+      expect(Math.sign(above.hand)).toBe(hand);
+      expect(above.up.join() !== base.up.join()).toBe(turned);
+    }
+  });
+
+  it('a seam-crossing win line is one straight path through the cover', () => {
+    const { topology, lines: all } = lines('torus3', 3, 3);
+    let crossing = 0;
+    for (const cells of all) {
+      const model = buildSceneModel(input(topology, { win: { player: 0, cells } }), {
+        ghosts: 'faces',
+      });
+      const paths = model.win?.paths ?? [];
+      expect(paths).toHaveLength(1);
+      const path = paths[0] ?? [];
+      expect(path).toHaveLength(5);
+      // Collinear, the M centres one step apart, half a step beyond each end.
+      const a = path[0] as Vec3;
+      const b = path[4] as Vec3;
+      for (const p of path) expect(dist(a, p) + dist(p, b)).toBeCloseTo(dist(a, b), 9);
+      const step = dist(path[1] as Vec3, path[2] as Vec3);
+      expect(dist(path[2] as Vec3, path[3] as Vec3)).toBeCloseTo(step, 9);
+      expect(dist(a, path[1] as Vec3)).toBeCloseTo(step / 2, 9);
+      if (path.some((p) => p.some((v) => Math.abs(v) > 1.5 + 0.5 + 1e-9))) crossing++;
+    }
+    expect(crossing).toBeGreaterThan(0);
+  });
+});
+
+describe('buildSceneModel: the net', () => {
+  it('lays the net out by a proper rotation (true shape and handedness)', () => {
+    const [x, y, z] = [netToWorld([1, 0, 0]), netToWorld([0, 1, 0]), netToWorld([0, 0, 1])];
+    const det =
+      x[0] * (y[1] * z[2] - y[2] * z[1]) -
+      x[1] * (y[0] * z[2] - y[2] * z[0]) +
+      x[2] * (y[0] * z[1] - y[1] * z[0]);
+    expect(det).toBe(1);
+  });
+
+  it('places 8 separate cubes with tags, and cuts lines only where the net does', () => {
+    const n = 3;
+    const { lines: all } = lines('tesseract', n, 3);
+    const topology = createTopology('tesseract', n);
+    const model = buildSceneModel(input(topology), { net: true });
+    expect(model.mode).toBe('net');
+    expect(model.outline.length).toBe(8 * 12 * 6);
+    expect(model.tags.filter((t) => t.kind === 'ridge')).toHaveLength(34);
+    let cut = 0;
+    for (const cells of all) {
+      const m = buildSceneModel(input(topology, { win: { player: 0, cells } }), { net: true });
+      const pieces = m.win?.paths.length ?? 0;
+      const lineTags = m.tags.filter((t) => t.kind === 'line');
+      expect(lineTags).toHaveLength(2 * (pieces - 1));
+      cut += pieces - 1;
+      // Inside the net every piece is straight (unfolding is an isometry).
+      for (const path of m.win?.paths ?? []) {
+        const a = path[0] as Vec3;
+        const b = path[path.length - 1] as Vec3;
+        const len = dist(a, b);
+        for (const p of path) expect(dist(a, p) + dist(p, b)).toBeCloseTo(len, 9);
+      }
+    }
+    expect(cut).toBeGreaterThan(0);
+  });
+});
+
+describe('buildSceneModel: trace', () => {
+  it('cover: the walk runs straight half a copy into the ghosts, then re-enters', () => {
+    const n = 4;
+    const topology = createTopology('tetracosm', n);
+    const cells: CellId[] = [];
+    const dirs = [];
+    let c = 0;
+    let d = topology.localDirections(0).find((v) => v.join() === '0,0,1')!;
+    for (let i = 0; i <= 4 * n; i++) {
+      cells.push(c);
+      dirs.push(d);
+      const r = topology.step(c, d)!;
+      c = r.cell;
+      d = r.dir;
+    }
+    for (const [ghosts, breaks] of [
+      ['off', 4],
+      ['faces', 3],
+    ] as const) {
+      const model = buildSceneModel(input(topology), { ghosts, trace: { cells, dirs } });
+      const steps = model.trace?.steps ?? [];
+      expect(steps).toHaveLength(4 * n);
+      expect(steps.filter((s) => s.length === 2)).toHaveLength(breaks);
+      expect(model.trace?.stops).toHaveLength(4 * n + 1);
+      for (const stop of model.trace?.stops ?? []) {
+        expect(Math.max(...stop.pos.map(Math.abs))).toBeLessThanOrEqual(
+          ghosts === 'off' ? n / 2 : n,
+        );
+      }
+    }
   });
 });

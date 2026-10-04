@@ -575,6 +575,149 @@
   padding-top: var(--s1);
 }
 
+/* Phase B view header: the ghost / net choice, then the buttons. Small (32 px) controls. */
+.view3d-header .segment {
+  min-height: 32px;
+  padding: 4px var(--s1) 3px;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+
+.view3d-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.view3d-buttons {
+  display: flex;
+  gap: var(--s1);
+}
+
+/* A pressed toggle button (Trace) is solid black, like a selected segment. */
+.btn[aria-pressed='true'] {
+  color: var(--white);
+  background: var(--black);
+}
+
+/* The 4D sliders: three labelled ranges and the auto-rotate toggle on one row. */
+.view3d-4d {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  padding-top: var(--s1);
+}
+
+.angle-slider {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.angle-value {
+  display: inline-block;
+  width: 32px;
+}
+
+.angle-slider input[type='range'] {
+  width: 96px;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+}
+
+.angle-slider input[type='range']::-webkit-slider-runnable-track {
+  height: 1px;
+  background: var(--black);
+}
+
+.angle-slider input[type='range']::-moz-range-track {
+  height: 1px;
+  background: var(--black);
+}
+
+.angle-slider input[type='range']::-webkit-slider-thumb {
+  width: 8px;
+  height: 16px;
+  margin-top: -8px;
+  border: 0;
+  border-radius: 0;
+  background: var(--black);
+  appearance: none;
+}
+
+.angle-slider input[type='range']::-moz-range-thumb {
+  width: 8px;
+  height: 16px;
+  border: 0;
+  border-radius: 0;
+  background: var(--black);
+}
+
+.view3d-4d .toggle {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+
+/* The tracer: the direction picker beside its start cell and result. */
+.view3d-trace {
+  display: flex;
+  gap: var(--s2);
+  align-items: flex-start;
+  padding-top: var(--s1);
+}
+
+.view3d-trace-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding-top: var(--s1);
+}
+
+.dir-picker {
+  flex: none;
+}
+
+.dir-picker-dot {
+  cursor: pointer;
+}
+
+.dir-picker--disabled .dir-picker-dot {
+  cursor: not-allowed;
+}
+
+.dir-picker-axis {
+  font-size: var(--fs-caption);
+  fill: var(--grey-60);
+}
+
+/* Net tags: HTML labels placed over the canvas at projected 3D points. */
+.view3d-tags {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* 16 px bold letters on a small white field, so edges and grid lines behind never cut them. */
+.view3d-tag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 1px 3px;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  line-height: 1;
+  background: var(--white);
+}
+
+.view3d-tag--line {
+  color: var(--done);
+  border: 1px solid var(--done);
+}
+
 /* Compact facts: a 48 px step numeral, then three short lines; 96 px tall at most. */
 .facts {
   position: relative;

@@ -16,6 +16,8 @@ interface ButtonProps {
   readonly class?: string;
   readonly ariaExpanded?: boolean;
   readonly ariaHasPopup?: boolean;
+  /** A toggle button: drawn solid black while pressed. */
+  readonly ariaPressed?: boolean;
 }
 
 /** A rectangular Swiss button (design-system §5): primary is solid black, secondary outlined. */
@@ -34,6 +36,7 @@ export function Button(props: ButtonProps) {
       aria-describedby={disabled ? tipId : undefined}
       aria-expanded={props.ariaExpanded}
       aria-haspopup={props.ariaHasPopup ? 'true' : undefined}
+      aria-pressed={props.ariaPressed}
       onClick={(event) => {
         if (disabled) {
           event.preventDefault();

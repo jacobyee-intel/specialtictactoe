@@ -25,6 +25,8 @@ export interface CellLook {
   readonly pickable: boolean | null;
   /** Act mode: clicking does something here. */
   readonly interactive: boolean;
+  /** On the tracer's walk: a black dot, or a black ring for the walker's cell. */
+  readonly trace?: 'visited' | 'current' | null;
 }
 
 interface CellProps {
@@ -180,6 +182,26 @@ export function Cell(props: CellProps) {
         />
       ))}
       {look.win && <Outline x={x} y={y} size={size} inset={0} width={4} color={COLORS.done} />}
+      {look.trace != null && (
+        <g class="cell-trace" data-trace={look.trace} opacity={look.ghost ? 0.5 : 1}>
+          <circle
+            cx={x + size / 2}
+            cy={y + size / 2}
+            r={Math.max(2, size * 0.09)}
+            fill={COLORS.black}
+          />
+          {look.trace === 'current' && (
+            <circle
+              cx={x + size / 2}
+              cy={y + size / 2}
+              r={Math.max(4, size * 0.36)}
+              fill="none"
+              stroke={COLORS.black}
+              stroke-width={2}
+            />
+          )}
+        </g>
+      )}
       {look.cursor && (
         <Outline x={x} y={y} size={size} inset={5} width={1} color={COLORS.black} dash="2 2" />
       )}

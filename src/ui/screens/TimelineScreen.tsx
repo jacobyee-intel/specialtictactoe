@@ -28,6 +28,7 @@ import type { Flow } from '../flow';
 import { boardOf } from '../overlays';
 import { navigate } from '../router';
 import { game, hover } from '../store';
+import { traceHighlight } from '../view3d';
 import {
   NO_SELECTION,
   actButtons,
@@ -379,8 +380,10 @@ export function TimelineScreen({ node, readOnly }: { node: number; readOnly: boo
     }
   };
 
+  const walk = traceHighlight.value;
   const interaction: BoardInteraction = {
     hovered,
+    trace: walk === null ? null : { visited: new Set(walk.cells), current: walk.current },
     selected: sel.kind !== 'none' ? sel.cell : pickedCell,
     cursor,
     pickable: mode.kind === 'pickCell' ? new Set(mode.cells) : null,
@@ -411,7 +414,15 @@ export function TimelineScreen({ node, readOnly }: { node: number; readOnly: boo
         <div class="page timeline-page">
           <div class="grid timeline-grid">
             <div class="col-1-6 timeline-left">
-              <Board3D input={view3d} hovered={hovered} onHover={setHover} caption={caption} />
+              <Board3D
+                input={view3d}
+                hovered={hovered}
+                onHover={setHover}
+                caption={caption}
+                node={node}
+                selected={sel.kind !== 'none' ? sel.cell : pickedCell}
+                facet={group}
+              />
             </div>
             <section class="col-7-12 board-zone" aria-label="Board">
               <FactsPanel state={state} node={node} splitPreview={splitText} />

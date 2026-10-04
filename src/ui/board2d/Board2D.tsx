@@ -23,6 +23,8 @@ export interface BoardInteraction {
   readonly onHover: (cell: CellId | null) => void;
   /** Accessible label for a cell, e.g. "(2, 0, 1), empty". */
   readonly label: (cell: CellId) => string;
+  /** The 3D view's geodesic tracer: the cells walked so far and the walker's cell. */
+  readonly trace?: { readonly visited: ReadonlySet<CellId>; readonly current: CellId } | null;
 }
 
 /**
@@ -64,6 +66,14 @@ export function Board2D(props: {
         : { count: view.open.counts[real] ?? 0, max: view.open.max, player: view.open.player },
     pickable: interaction.pickable === null ? null : !ghost && interaction.pickable.has(real),
     interactive: interaction.interactive,
+    trace:
+      interaction.trace == null
+        ? null
+        : interaction.trace.current === real
+          ? 'current'
+          : interaction.trace.visited.has(real)
+            ? 'visited'
+            : null,
   });
 
   return (

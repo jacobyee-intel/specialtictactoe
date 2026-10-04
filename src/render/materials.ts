@@ -39,12 +39,41 @@ export interface Materials {
   readonly hoverEdge: LineBasicMaterial;
   /** Invisible pick targets (the mesh is hidden; raycasting ignores visibility). */
   readonly pick: MeshBasicMaterial;
+  /**
+   * Ghost copies: the same glyphs at 35% strength, as opaque tints of the player colours (35%
+   * of the accent on white). They are drawn in their own pass under the board (see
+   * `GHOST_LAYER`), so they never cover the fundamental cube and need no sorting.
+   */
+  readonly ghostMark: readonly [MeshBasicMaterial, MeshBasicMaterial];
+  /** White edges on the ghost cubes, as on the real ones, so neighbouring ghosts stay apart. */
+  readonly ghostMarkEdge: LineBasicMaterial;
+  /** The chiral F: black in the fundamental cube, grey-60 in the copies. */
+  readonly landmark: MeshBasicMaterial;
+  readonly ghostLandmark: MeshBasicMaterial;
+  /** Edges of the hovered cell's ghost copies. */
+  readonly hoverGhostEdge: LineBasicMaterial;
+  /** The tesseract cube chosen in the 2D filter: a heavier black outline (4 px). */
+  readonly outlineBold: LineMaterial;
+  /** The tracer's trail and walker. */
+  readonly trace: MeshBasicMaterial;
   /** Screen size in CSS pixels, for the screen-space line widths. */
   setResolution(width: number, height: number): void;
   dispose(): void;
 }
 
 const color = (hex: string) => new Color(hex);
+
+/** How strongly a ghost copy shows its glyph (the 2D halos use 30%). */
+export const GHOST_STRENGTH = 0.35;
+
+/** `hex` at `strength` on white, mixed in sRGB like CSS opacity over a white page. */
+export function tintHex(hex: string, strength: number): string {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return `#${c
+    .map((v) => Math.round(255 - strength * (255 - v)))
+    .map((v) => v.toString(16).padStart(2, '0'))
+    .join('')}`;
+}
 
 export function playerHex(player: Player): string {
   return player === 0 ? COLORS.p1 : COLORS.p2;
@@ -53,6 +82,9 @@ export function playerHex(player: Player): string {
 export function createMaterials(registry = new ResourceRegistry()): Materials {
   const t = <M extends Material>(m: M) => registry.track(m);
   const outline = t(new LineMaterial({ color: color(COLORS.black), linewidth: 2 }));
+  const outlineBold = t(new LineMaterial({ color: color(COLORS.black), linewidth: 4 }));
+  const ghost = (hex: string) =>
+    t(new MeshBasicMaterial({ color: color(tintHex(hex, GHOST_STRENGTH)) }));
   const dashed = (p: Player) =>
     t(new LineDashedMaterial({ color: color(playerHex(p)), dashSize: 0.12, gapSize: 0.08 }));
   return {
@@ -89,7 +121,17 @@ export function createMaterials(registry = new ResourceRegistry()): Materials {
     ),
     hoverEdge: t(new LineBasicMaterial({ color: color(COLORS.black) })),
     pick: t(new MeshBasicMaterial({ visible: false })),
-    setResolution: (width, height) => outline.resolution.set(width, height),
+    ghostMark: [ghost(COLORS.p1), ghost(COLORS.p2)],
+    ghostMarkEdge: t(new LineBasicMaterial({ color: color(COLORS.white) })),
+    landmark: t(new MeshBasicMaterial({ color: color(COLORS.black) })),
+    ghostLandmark: t(new MeshBasicMaterial({ color: color(COLORS.grey60) })),
+    hoverGhostEdge: t(new LineBasicMaterial({ color: color(COLORS.grey60) })),
+    outlineBold,
+    trace: t(new MeshBasicMaterial({ color: color(COLORS.black) })),
+    setResolution: (width, height) => {
+      outline.resolution.set(width, height);
+      outlineBold.resolution.set(width, height);
+    },
     dispose: () => registry.disposeAll(),
   };
 }
