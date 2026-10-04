@@ -84,7 +84,14 @@ function main() {
   const source = { branch: BRANCH, path: '/' };
   let pages = apiOrNull('GET', `repos/${repo}/pages`);
   if (!pages) {
-    pages = api('POST', `repos/${repo}/pages`, { source });
+    try {
+      pages = api('POST', `repos/${repo}/pages`, { source });
+    } catch (err) {
+      // gh sometimes fails to parse this endpoint's response even though Pages was enabled;
+      // trust a fresh read over the error.
+      pages = apiOrNull('GET', `repos/${repo}/pages`);
+      if (!pages) throw err;
+    }
     console.log('Enabled GitHub Pages from the gh-pages branch.');
   } else if (pages.build_type !== 'legacy' || pages.source?.branch !== BRANCH) {
     api('PUT', `repos/${repo}/pages`, { build_type: 'legacy', source });
