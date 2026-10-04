@@ -532,13 +532,6 @@ export function MultiverseScreen() {
             <Side state={state} flow={f} />
             {card !== null && <NodeCard state={state} node={card.node} label={card.label} />}
             <Legend seat={seat} graph={graph} />
-            {graph && (
-              <p class="t-caption measure multiverse-caption">
-                Columns are local time T. Red moves at even T, blue at odd T. Branches that start in
-                the past came from time travel or send-backs. A send-back is drawn in the sender’s
-                colour.
-              </p>
-            )}
           </aside>
         </div>
       </div>

@@ -109,13 +109,6 @@ function BoardHeader(props: {
           />
         </div>
       )}
-      {showOpenLines.value && (
-        <p class="t-caption measure board-note">
-          <span class="t-bold">Open lines.</span> Each empty cell counts the lines{' '}
-          {playerName(openPlayer)} can still complete through it. On the 3-torus every cell of an
-          empty board scores the same; on the flat cube the centre dominates.
-        </p>
-      )}
     </div>
   );
 }
@@ -396,7 +389,6 @@ export function TimelineScreen({ node, readOnly }: { node: number; readOnly: boo
       return `${coordLabel(state.topology, cell)}, ${content}`;
     },
   };
-  const seam = visible.find((p) => p.caption !== undefined);
   const wrapped = state.topology instanceof CubicQuotient && state.topology.wrapped;
   const splitText = splitPreview && mode.kind === 'act' ? splitPreviewText(state, node) : null;
   const pickDetail =
@@ -440,11 +432,6 @@ export function TimelineScreen({ node, readOnly }: { node: number; readOnly: boo
                 <p class={`t-caption t-num board-hover ${hovered === null ? 't-grey' : ''}`}>
                   {caption ?? 'Hover a cell to see its coordinates and lines.'}
                 </p>
-                {seam?.caption !== undefined && (
-                  <p class="t-caption measure">
-                    <span class="t-bold">Holonomy.</span> {seam.caption}
-                  </p>
-                )}
               </div>
             </section>
           </div>

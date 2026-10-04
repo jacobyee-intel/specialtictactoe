@@ -6,17 +6,14 @@ import { Button } from './Button';
 import { PlayerGlyph } from './PlayerGlyph';
 
 /**
- * The Menu button and its panel. Quitting asks for confirmation first, because a quit game
- * cannot be resumed.
+ * The Menu button and its panel.
  */
 function Menu() {
   const [open, setOpen] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const root = useRef<HTMLDivElement>(null);
 
   const close = () => {
     setOpen(false);
-    setConfirming(false);
   };
 
   useEffect(() => {
@@ -50,19 +47,14 @@ function Menu() {
       </Button>
       {open && (
         <div class="hud-menu-panel" role="dialog" aria-label="Menu">
-          {confirming ? (
-            <>
-              <p class="t-body">Quit this game? It cannot be resumed.</p>
-              <div class="button-row">
-                <Button variant="primary" onClick={quit}>
-                  Quit
-                </Button>
-                <Button onClick={close}>Cancel</Button>
-              </div>
-            </>
-          ) : (
-            <Button onClick={() => setConfirming(true)}>Quit to start</Button>
-          )}
+          <Button
+            onClick={() => {
+              close();
+              quit();
+            }}
+          >
+            Quit to start
+          </Button>
         </div>
       )}
     </div>
