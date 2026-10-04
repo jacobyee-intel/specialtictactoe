@@ -23,6 +23,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/geometry/**', 'src/engine/**'],
+      exclude: ['**/__tests__/**', '**/*.test.ts'],
     },
   },
 });
