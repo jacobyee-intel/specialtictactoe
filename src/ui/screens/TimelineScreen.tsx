@@ -5,7 +5,8 @@ import { ActionBar } from '../components/ActionBar';
 import { Button } from '../components/Button';
 import { GameBanner } from '../components/GameBanner';
 import { Hud } from '../components/Hud';
-import { NodeFacts } from '../components/NodeFacts';
+import { Board3D } from '../components/Board3D';
+import { FactsPanel } from '../components/FactsPanel';
 import { Segmented } from '../components/Segmented';
 import { Toast } from '../components/Toast';
 import { Toggle } from '../components/Toggle';
@@ -197,8 +198,9 @@ function Actions(props: {
 }
 
 /**
- * One node of the multiverse: the facts on the left (the 3D board from Stage 7), the 2D slice
- * board on the right and the action bar below. What the player may do here is decided by
+ * One node of the multiverse: the 3D board on the left; the compact facts, the 2D slice board
+ * and its captions on the right; the action bar below. Hover is shared between the two boards
+ * through the store. What the player may do here is decided by
  * `timelineModel.ts` from the engine; this component only renders and routes events.
  */
 export function TimelineScreen({ node, readOnly }: { node: number; readOnly: boolean }) {
@@ -244,6 +246,20 @@ export function TimelineScreen({ node, readOnly }: { node: number; readOnly: boo
   const visible: Panel[] = useMemo(() => filterGroup(panels, group), [panels, group]);
   const packing = useMemo(() => fitPanels(visible, zone), [visible, zone]);
 
+  // The 3D board rebuilds when this object changes, so it is memoised on what it depends on
+  // (not on hover, which reaches the 3D view separately).
+  const threatsOn = showThreats.value;
+  const view3d = useMemo(
+    () =>
+      state === null || !exists
+        ? null
+        : {
+            topology: state.topology,
+            ...boardView(state, node, { threats: threatsOn, openFor: null }),
+          },
+    [state, exists, node, threatsOn],
+  );
+
   const keyHandler = useRef<(event: KeyboardEvent) => void>(() => {});
   useEffect(() => {
     const listener = (event: KeyboardEvent) => keyHandler.current(event);
@@ -251,7 +267,7 @@ export function TimelineScreen({ node, readOnly }: { node: number; readOnly: boo
     return () => window.removeEventListener('keydown', listener);
   }, []);
 
-  if (state === null || !exists) return null;
+  if (state === null || !exists || view3d === null) return null;
 
   const mode = timelineMode(state, node, f, readOnly);
   const sel = mode.kind === 'act' ? validSelection(state, node, selection) : NO_SELECTION;
@@ -261,6 +277,10 @@ export function TimelineScreen({ node, readOnly }: { node: number; readOnly: boo
     openFor: showOpenLines.value ? (openLinesFor.value ?? seat ?? 0) : null,
   });
   const hovered = hover.value?.node === node ? hover.value.cell : null;
+  const caption = hovered === null ? null : hoverCaption(state, node, hovered);
+  const setHover = (cell: CellId | null) => {
+    hover.value = cell === null ? null : { node, cell };
+  };
   const board = boardOf(state, node);
   const pickedCell = mode.kind === 'pickCell' && f.kind !== 'idle' ? f.cell : null;
 
@@ -366,9 +386,7 @@ export function TimelineScreen({ node, readOnly }: { node: number; readOnly: boo
     pickable: mode.kind === 'pickCell' ? new Set(mode.cells) : null,
     interactive: mode.kind === 'act',
     onCellClick,
-    onHover: (cell) => {
-      hover.value = cell === null ? null : { node, cell };
-    },
+    onHover: setHover,
     label: (cell) => {
       const v = board[cell];
       const content = v === 0 ? 'empty' : playerName((v === 1 ? 0 : 1) as Player);
@@ -393,9 +411,10 @@ export function TimelineScreen({ node, readOnly }: { node: number; readOnly: boo
         <div class="page timeline-page">
           <div class="grid timeline-grid">
             <div class="col-1-6 timeline-left">
-              <NodeFacts state={state} node={node} splitPreview={splitText} />
+              <Board3D input={view3d} hovered={hovered} onHover={setHover} caption={caption} />
             </div>
             <section class="col-7-12 board-zone" aria-label="Board">
+              <FactsPanel state={state} node={node} splitPreview={splitText} />
               <BoardHeader
                 wrapped={wrapped}
                 groups={groups}
@@ -408,9 +427,7 @@ export function TimelineScreen({ node, readOnly }: { node: number; readOnly: boo
               </div>
               <div class="board-captions">
                 <p class={`t-caption t-num board-hover ${hovered === null ? 't-grey' : ''}`}>
-                  {hovered === null
-                    ? 'Hover a cell to see its coordinates and lines.'
-                    : hoverCaption(state, node, hovered)}
+                  {caption ?? 'Hover a cell to see its coordinates and lines.'}
                 </p>
                 {seam?.caption !== undefined && (
                   <p class="t-caption measure">

@@ -527,69 +527,167 @@
 
 .timeline-left {
   min-height: 0;
-  overflow: auto;
 }
 
-/* The box the 3D board takes over in Stage 7: the full height of the left zone. */
-.view3d-slot {
+/* 3D zone: a header row, the canvas filling the height, then the hint and hover caption. */
+.view3d {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
 }
 
-.node-facts-id {
-  margin-top: var(--s3);
+.view3d-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  min-height: 32px;
+  margin-bottom: var(--s2);
 }
 
-.node-numeral {
-  margin-top: var(--s1);
-  font-size: clamp(96px, 13vh, var(--fs-numeral));
+.view3d-host {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--black);
+  border-bottom: 1px solid var(--black);
+}
+
+/* Absolute, so the canvas's own pixel size never feeds back into the layout it measures. */
+.view3d-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+.view3d-message {
+  padding-top: var(--s3);
+}
+
+.view3d-footer {
+  display: grid;
+  gap: 4px;
+  padding-top: var(--s1);
+}
+
+/* Compact facts: a 48 px step numeral, then three short lines; 96 px tall at most. */
+.facts {
+  position: relative;
+  display: flex;
+  gap: var(--s3);
+  height: 96px;
+  margin-bottom: var(--s2);
+  border-top: 4px solid var(--black);
+  padding-top: var(--s1);
+}
+
+.facts-step {
+  flex: none;
+}
+
+.facts-numeral {
+  font-size: var(--fs-heading);
   font-weight: 700;
-  line-height: calc(168 / 192);
+  line-height: var(--lh-heading);
   letter-spacing: var(--tight);
   white-space: nowrap;
 }
 
-.node-mover {
+.facts-body {
+  display: grid;
+  grid-template-rows: 24px 32px 16px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.facts-mover {
   display: flex;
   align-items: center;
   gap: var(--s1);
-  margin-top: var(--s3);
 }
 
-.node-status {
+.facts-status {
   display: flex;
   align-items: center;
+  gap: 4px;
+  margin-left: -4px;
+}
+
+.facts-origin-row {
+  display: flex;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.facts-origin {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.facts-details {
+  flex: none;
+}
+
+.facts-details summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.facts-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.facts-details summary::after {
+  content: ' +';
+}
+
+.facts-details[open] summary::after {
+  content: ' \2212';
+}
+
+/* Details open over the board header rather than pushing the 2D board down. */
+.facts-links {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  z-index: 10;
+  display: grid;
   gap: var(--s1);
-  margin: var(--s2) 0 0 -8px;
+  border: 1px solid var(--black);
+  padding: var(--s1) var(--s2);
+  background: var(--white);
 }
 
-.node-origin,
-.fork {
-  margin-top: var(--s2);
+.facts-links-label {
+  display: inline-block;
+  width: 96px;
+  color: var(--grey-60);
 }
 
-.fork svg {
-  display: block;
-  margin-bottom: var(--s1);
+.facts-fork {
+  display: flex;
+  grid-row: 2 / 4;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+}
+
+.facts-fork svg {
+  flex: none;
 }
 
 .fork-label {
   font-size: var(--fs-caption);
   dominant-baseline: middle;
-}
-
-.node-links {
-  display: grid;
-  gap: var(--s1);
-  margin-top: var(--s4);
-  border-top: 1px solid var(--black);
-  padding-top: var(--s1);
-}
-
-.node-links-label {
-  display: inline-block;
-  width: 96px;
-  color: var(--grey-60);
 }
 
 /* Board zone: header, the scrolling board, then captions. */
@@ -1113,6 +1211,16 @@
 
   .board-scroll {
     height: 70vh;
+  }
+
+  /* The 3D view stacks above the 2D board at 4:3. */
+  .view3d-host {
+    flex: none;
+    aspect-ratio: 4 / 3;
+  }
+
+  .timeline-left {
+    margin-bottom: var(--s4);
   }
 
   .action-bar-inner {

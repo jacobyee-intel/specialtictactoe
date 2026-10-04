@@ -4,6 +4,13 @@ import { Cell, type CellLook } from './Cell';
 import { PANEL_TITLE, type Packing, type Panel } from './layout';
 import type { BoardView } from './boardView';
 
+/**
+ * The axis hint ("x → y ↓") sits beside the first panel's title and may run into the 24 px
+ * gutter, but no further: below this panel width (small cells, e.g. all eight tesseract cubes at
+ * N = 3) it would collide with the next title, so it is left out.
+ */
+const AXES_MIN_WIDTH = 64;
+
 export interface BoardInteraction {
   readonly hovered: CellId | null;
   readonly selected: CellId | null;
@@ -84,7 +91,7 @@ export function Board2D(props: {
         >
           <p class="t-caption board-panel-title" style={{ height: `${PANEL_TITLE}px` }}>
             <span>{panel.title}</span>
-            {i === 0 && (
+            {i === 0 && width >= AXES_MIN_WIDTH && (
               <span
                 class="board-axes t-grey"
                 aria-label={`${panel.axes.col} to the right, ${panel.axes.row} down`}
