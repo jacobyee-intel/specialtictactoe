@@ -20,6 +20,8 @@ Two players share one screen. Player 1 is red squares, Player 2 is blue circles.
 4. **Win timelines.** M in a row along a straight line through the space, across its seams, wins that timeline. The loser must then make a **forced send-back**: a new mark on an earlier board of that timeline.
 5. **Win the game** by winning W timelines first. If L rounds pass, the game is a draw. At most 32 timelines can be live at once.
 
+**Reading the board.** A timeline shows the cube as z-slices, x to the right and y down. In the wrapped spaces, the faint ring around each slice holds the cells it is glued to, and the last panel shows slice 0 as seen from above the top slice: unchanged in the 3-torus, turned a quarter turn in the quarter-turn space, mirrored in the amphicosm. The tesseract shows its eight cubes, one at a time or all together. Toggle **Threats** to see lines one mark from completion, and **Open lines** to count the lines still winnable through each cell. Players hand over the seat between turns: the board stays hidden until the next player presses Start turn.
+
 ## Development
 
 ```bash

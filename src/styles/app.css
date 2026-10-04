@@ -446,49 +446,18 @@
   padding: 4px 0 3px;
 }
 
-/* --- Temporary game screens ------------------------------------------------------------------ */
+/* --- Game screens: shared frame ---------------------------------------------------------- */
 
-.temp-screen {
-  padding-top: var(--s6);
-  padding-bottom: var(--s12);
+.screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
-.temp-flag {
-  margin-bottom: var(--s1);
-  color: var(--grey-60);
-}
-
-.temp-title {
-  margin: var(--s3) 0 var(--s4);
-}
-
-.temp-side {
-  display: grid;
-  gap: var(--s1);
-  padding-top: calc(var(--s6) + var(--lh-caption) + var(--s1) + 4px + var(--s3));
-}
-
-.node-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.node-table th {
-  border-bottom: 1px solid var(--black);
-  padding: 0 var(--s2) var(--s1) 0;
-  font-weight: 400;
-  text-align: left;
-}
-
-.node-table td {
-  border-bottom: 1px solid var(--grey-30);
-  padding: var(--s1) var(--s2) var(--s1) 0;
-  vertical-align: middle;
-}
-
-.node-table td:last-child {
-  padding-right: 0;
-  text-align: right;
+/* The timeline fills the window exactly: HUD, board zone, action bar. Only the board scrolls. */
+.screen--fixed {
+  height: 100vh;
+  overflow: hidden;
 }
 
 .inline-glyph {
@@ -497,12 +466,410 @@
   gap: var(--s1);
 }
 
-.facts {
+/* --- Banner (forced send-back, game over) ----------------------------------------------------- */
+
+.banner {
+  color: var(--white);
+  animation: banner-in var(--t-slow) var(--ease);
+}
+
+.banner--p1 {
+  background: var(--p1);
+}
+
+.banner--p2 {
+  background: var(--p2);
+}
+
+.banner--done {
+  background: var(--done);
+}
+
+.banner--black {
+  background: var(--black);
+}
+
+.banner-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding-top: var(--s3);
+  padding-bottom: var(--s3);
+}
+
+.banner-detail {
+  margin-top: var(--s1);
+}
+
+@keyframes banner-in {
+  from {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+}
+
+/* --- Timeline screen ------------------------------------------------------------------------- */
+
+.timeline-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--s3) 0;
+}
+
+.timeline-page,
+.timeline-grid {
+  height: 100%;
+}
+
+.timeline-grid {
+  align-items: stretch;
+}
+
+.timeline-left {
+  min-height: 0;
+  overflow: auto;
+}
+
+/* The box the 3D board takes over in Stage 7: the full height of the left zone. */
+.view3d-slot {
+  height: 100%;
+  min-height: 0;
+}
+
+.node-facts-id {
+  margin-top: var(--s3);
+}
+
+.node-numeral {
+  margin-top: var(--s1);
+  font-size: clamp(96px, 13vh, var(--fs-numeral));
+  font-weight: 700;
+  line-height: calc(168 / 192);
+  letter-spacing: var(--tight);
+  white-space: nowrap;
+}
+
+.node-mover {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-top: var(--s3);
+}
+
+.node-status {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  margin: var(--s2) 0 0 -8px;
+}
+
+.node-origin,
+.fork {
+  margin-top: var(--s2);
+}
+
+.fork svg {
+  display: block;
+  margin-bottom: var(--s1);
+}
+
+.fork-label {
+  font-size: var(--fs-caption);
+  dominant-baseline: middle;
+}
+
+.node-links {
+  display: grid;
+  gap: var(--s1);
+  margin-top: var(--s4);
+  border-top: 1px solid var(--black);
+  padding-top: var(--s1);
+}
+
+.node-links-label {
+  display: inline-block;
+  width: 96px;
+  color: var(--grey-60);
+}
+
+/* Board zone: header, the scrolling board, then captions. */
+.board-zone {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.board-header {
   display: grid;
   gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+
+.board-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  min-height: 32px;
+}
+
+/* Small segmented choices in the board header: 32 px tall instead of 48. */
+.board-header .segment {
+  min-height: 32px;
+  padding: 4px var(--s1) 3px;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+
+.board-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.board2d {
+  position: relative;
+}
+
+.board-heading,
+.board-panel {
+  position: absolute;
+}
+
+.board-heading {
+  border-top: 1px solid var(--black);
+  padding-top: 4px;
+}
+
+.board-panel-title {
+  display: flex;
+  gap: var(--s2);
+  white-space: nowrap;
+}
+
+.board-panel-svg {
+  display: block;
+  overflow: visible;
+}
+
+.cell--clickable {
+  cursor: pointer;
+}
+
+.cell-numeral {
+  fill: var(--black);
+  font-size: var(--fs-caption);
+  pointer-events: none;
+}
+
+.board-captions {
+  display: grid;
+  gap: 4px;
+  margin-top: var(--s2);
+  border-top: 1px solid var(--black);
+  padding-top: var(--s1);
+}
+
+/* --- Action bar ------------------------------------------------------------------------------ */
+
+.action-bar {
+  flex: none;
+  border-top: 1px solid var(--black);
+  background: var(--white);
+}
+
+.action-bar-inner {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--s3);
+  height: 96px;
+}
+
+.action-bar-buttons {
+  flex: none;
+  flex-wrap: nowrap;
+  gap: var(--s1);
+}
+
+.action-bar-caption {
+  min-width: 0;
+  border-left: 1px solid var(--black);
+  padding-left: var(--s3);
+}
+
+.action-slot {
+  display: inline-flex;
+}
+
+/* --- Multiverse (list) ----------------------------------------------------------------------- */
+
+.multiverse {
+  padding-top: var(--s4);
+  padding-bottom: var(--s12);
+}
+
+.pick-prompt {
   margin-bottom: var(--s6);
 }
 
-.facts dt {
-  margin-bottom: 4px;
+.pick-prompt .bar {
+  margin-bottom: var(--s2);
+}
+
+.node-group + .node-group {
+  margin-top: var(--s4);
+}
+
+.node-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s1) 0 var(--s1);
+}
+
+.node-group-title {
+  font-weight: 400;
+}
+
+.node-group-empty {
+  border-top: 1px solid var(--grey-30);
+  padding-top: var(--s1);
+}
+
+.node-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.node-table td {
+  border-top: 1px solid var(--grey-30);
+  padding: var(--s1) var(--s2) var(--s1) 0;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.node-table td.node-row-origin {
+  width: 100%;
+  white-space: normal;
+}
+
+.node-table td:last-child {
+  padding-right: 0;
+  text-align: right;
+}
+
+.node-row-glyph {
+  width: 40px;
+}
+
+.node-row-glyph .status-glyph {
+  display: block;
+}
+
+.node-row--dim > td {
+  opacity: 0.3;
+}
+
+.node-row-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: var(--s2);
+}
+
+.multiverse-side {
+  position: sticky;
+  top: var(--s3);
+  display: grid;
+  gap: var(--s6);
+}
+
+.side-actions {
+  display: grid;
+  justify-items: start;
+  gap: var(--s2);
+}
+
+.concede-confirm {
+  display: grid;
+  gap: var(--s2);
+  border-left: 4px solid var(--black);
+  padding-left: var(--s2);
+}
+
+.legend-list {
+  display: grid;
+  gap: 0;
+}
+
+.legend-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-left: -8px;
+}
+
+/* --- Handoff --------------------------------------------------------------------------------- */
+
+.handoff {
+  padding-top: var(--s6);
+  padding-bottom: var(--s12);
+}
+
+.handoff-glyph {
+  margin-top: var(--s12);
+}
+
+.handoff-name {
+  margin-top: var(--s3);
+  font-size: var(--fs-numeral);
+  font-weight: 700;
+  line-height: var(--lh-numeral);
+  letter-spacing: var(--tight);
+  white-space: nowrap;
+}
+
+.handoff-caption {
+  margin-top: var(--s4);
+}
+
+.handoff-note {
+  margin-top: var(--s1);
+}
+
+.handoff-actions {
+  margin-top: var(--s6);
+}
+
+/* Narrow windows: every zone stacks and the timeline page scrolls as a whole. */
+@media (max-width: 1023px) {
+  .screen--fixed {
+    height: auto;
+    overflow: visible;
+  }
+
+  .board-scroll {
+    height: 70vh;
+  }
+
+  .action-bar-inner {
+    flex-direction: column-reverse;
+    align-items: flex-start;
+    height: auto;
+    padding-top: var(--s2);
+    padding-bottom: var(--s2);
+  }
+
+  .action-bar-buttons {
+    flex-wrap: wrap;
+  }
+
+  .handoff-name {
+    font-size: var(--fs-display);
+    line-height: var(--lh-display);
+  }
 }

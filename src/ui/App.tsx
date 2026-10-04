@@ -1,6 +1,8 @@
 import { useEffect } from 'preact/hooks';
+import { handoff } from './controller';
 import { route } from './router';
-import { MultiverseScreen, StartScreen, TimelineScreen } from './screens';
+import { HandoffScreen, MultiverseScreen, StartScreen, TimelineScreen } from './screens';
+import { game } from './store';
 
 const COLUMNS = Array.from({ length: 12 }, (_, i) => i);
 
@@ -36,6 +38,8 @@ function useGridOverlay(): void {
 export function App() {
   useGridOverlay();
   const current = route.value;
+  const state = game.value;
+  const seat = handoff.value;
 
   let screen;
   switch (current.screen) {
@@ -48,6 +52,10 @@ export function App() {
     case 'timeline':
       screen = <TimelineScreen node={current.node} readOnly={current.readOnly} />;
       break;
+  }
+  // The handoff hides every game screen until the next player takes the seat.
+  if (current.screen !== 'start' && state !== null && seat !== null) {
+    screen = <HandoffScreen state={state} player={seat} />;
   }
 
   return (

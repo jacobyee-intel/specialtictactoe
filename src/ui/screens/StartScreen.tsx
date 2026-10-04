@@ -1,4 +1,5 @@
 import { signal } from '@preact/signals';
+import type { GameConfig } from '@/engine';
 import { TOPOLOGY_IDS, TOPOLOGY_INFO, type TopologyId } from '@/geometry';
 import { Button, ButtonLink } from '../components/Button';
 import { Segmented } from '../components/Segmented';
@@ -26,6 +27,11 @@ import { game, startGame } from '../store';
  * quitting, the previous settings are still there.
  */
 const form = signal<StartInput>(initialInput());
+
+/** Fill the form with a previous game's settings (the "New game" button after a game). */
+export function prefillStartForm(config: GameConfig): void {
+  form.value = initialInput(config);
+}
 
 const SPACE_OPTIONS = TOPOLOGY_IDS.map((id) => ({ value: id, label: TOPOLOGY_INFO[id].fullName }));
 
