@@ -1,0 +1,102 @@
+/*
+ * Layout primitives (design-system §4): a left-aligned 12-column grid with 24 px gutters and
+ * 48 px outer margins, rules between zones, and a debug overlay (`?grid` or the G key in dev).
+ */
+
+/* The page box: left-aligned, so on wide screens the right margin floats wider. */
+.page {
+  position: relative;
+  width: 100%;
+  max-width: var(--max-width);
+  padding: 0 var(--margin);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(var(--columns), minmax(0, 1fr));
+  column-gap: var(--gutter);
+  align-items: start;
+}
+
+.col-1-12 {
+  grid-column: 1 / 13;
+}
+
+.col-1-6 {
+  grid-column: 1 / 7;
+}
+
+.col-1-7 {
+  grid-column: 1 / 8;
+}
+
+.col-1-9 {
+  grid-column: 1 / 10;
+}
+
+.col-7-12 {
+  grid-column: 7 / 13;
+}
+
+.col-8-12 {
+  grid-column: 8 / 13;
+}
+
+.col-10-12 {
+  grid-column: 10 / 13;
+}
+
+/* Below the minimum desktop width every zone stacks, in the same order. */
+@media (max-width: 1023px) {
+  .grid > [class*='col-'] {
+    grid-column: 1 / -1;
+  }
+}
+
+/* --- Rules ----------------------------------------------------------------------------------- */
+
+/* A 1 px hairline between zones. */
+.rule {
+  height: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--black);
+}
+
+/* The 4 px section bar that sits above a heading, like the top bar of a Swiss poster. */
+.bar {
+  height: 4px;
+  margin: 0;
+  border: 0;
+  background: var(--black);
+}
+
+/* --- Debug grid overlay ---------------------------------------------------------------------- */
+
+.grid-overlay {
+  display: none;
+}
+
+body.show-grid .grid-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: block;
+  pointer-events: none;
+
+  /* 8 px baselines across the whole viewport. */
+  background: repeating-linear-gradient(
+    to bottom,
+    rgb(0 91 187 / 18%) 0 1px,
+    transparent 1px var(--s1)
+  );
+}
+
+.grid-overlay .grid {
+  height: 100%;
+}
+
+.grid-overlay .grid > span {
+  height: 100vh;
+  background: rgb(227 6 19 / 8%);
+}

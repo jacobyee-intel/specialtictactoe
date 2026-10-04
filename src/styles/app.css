@@ -1,86 +1,508 @@
+/*
+ * The app shell, components and screens (design-system §5). Flat, square and ruled: no rounded
+ * corners, shadows or gradients anywhere.
+ */
+
 #app {
   min-height: 100vh;
 }
 
-.app-shell {
-  display: grid;
-  min-height: 100vh;
-  place-items: center;
-  padding: 2rem;
-}
-
-.screen {
-  width: min(960px, 100%);
-  border: 1px solid var(--border);
-  border-radius: 28px;
-  padding: clamp(1.5rem, 4vw, 3rem);
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  box-shadow: 0 24px 80px rgb(0 0 0 / 35%);
-}
-
-.screen h1 {
-  max-width: 12ch;
-  margin: 0;
-  font-size: clamp(3rem, 10vw, 6.8rem);
-  line-height: 0.9;
-  letter-spacing: -0.08em;
-}
-
-.screen h2 {
-  margin: 0 0 1rem;
-  font-size: clamp(2rem, 5vw, 4rem);
-  line-height: 1;
-}
-
-.screen p {
-  max-width: 62ch;
-  color: var(--muted);
-  font-size: 1.1rem;
-  line-height: 1.6;
-}
-
-.start-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
-  gap: clamp(1.5rem, 5vw, 4rem);
-  align-items: center;
+.measure {
+  max-width: 65ch;
 }
 
 .button-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-top: 2rem;
+  align-items: flex-start;
+  gap: var(--s2);
 }
 
-.preview-card {
+/* A 7-column zone split into its own columns; its tracks line up with the page grid. */
+.sub7 {
   display: grid;
-  gap: 1rem;
-  justify-items: center;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 1rem;
-  background: rgb(255 255 255 / 5%);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  column-gap: var(--gutter);
 }
 
-.preview-card canvas {
-  width: 240px;
-  max-width: 100%;
-  height: 180px;
-  border-radius: 16px;
+/* --- Tooltip (disabled reasons) -------------------------------------------------------------- */
+
+.btn-wrap {
+  position: relative;
+  display: inline-flex;
 }
 
-.preview-card span {
-  color: var(--muted);
-  font-size: 0.9rem;
+.tooltip {
+  position: absolute;
+  top: calc(100% + var(--s1));
+  left: 0;
+  z-index: 20;
+  display: none;
+  width: max-content;
+  max-width: 320px;
+  border: 1px solid var(--black);
+  padding: 4px var(--s1);
+  background: var(--white);
 }
 
-@media (max-width: 760px) {
-  .start-layout {
-    grid-template-columns: 1fr;
+.btn-wrap:hover .tooltip,
+.btn-wrap:focus-within .tooltip {
+  display: block;
+}
+
+/* --- Segmented choice ------------------------------------------------------------------------ */
+
+.segmented {
+  display: flex;
+}
+
+.segmented--vertical {
+  flex-direction: column;
+}
+
+.segment {
+  position: relative;
+  min-height: 48px;
+  margin: 0;
+  border: 1px solid var(--black);
+  border-radius: 0;
+  padding: 12px var(--s2) 11px;
+  color: var(--black);
+  background: var(--white);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--t-fast) linear;
+}
+
+.segmented--vertical .segment + .segment {
+  margin-top: -1px;
+}
+
+.segmented--horizontal .segment + .segment {
+  margin-left: -1px;
+}
+
+.segment:hover {
+  background: var(--grey-10);
+}
+
+.segment--on,
+.segment--on:hover {
+  color: var(--white);
+  background: var(--black);
+}
+
+.segment:focus-visible {
+  z-index: 1;
+}
+
+/* --- Toggle ---------------------------------------------------------------------------------- */
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  cursor: pointer;
+}
+
+.toggle--disabled {
+  color: var(--grey-30);
+  cursor: not-allowed;
+}
+
+.toggle-box {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid var(--black);
+  border-radius: 0;
+  background: var(--white);
+  appearance: none;
+  cursor: inherit;
+}
+
+.toggle-box:checked {
+  background: var(--black);
+}
+
+.toggle-box:disabled {
+  border-color: var(--grey-30);
+}
+
+/* --- Stepper --------------------------------------------------------------------------------- */
+
+.stepper-label {
+  display: block;
+  margin-bottom: var(--s1);
+}
+
+.stepper-value {
+  display: block;
+  width: 100%;
+  height: 56px;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--black);
+  border-radius: 0;
+  padding: 0;
+  color: var(--black);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-heading);
+  font-weight: 700;
+  line-height: var(--lh-heading);
+  letter-spacing: var(--tight);
+}
+
+.stepper--invalid .stepper-value {
+  border-bottom-color: var(--p1);
+}
+
+.stepper-buttons {
+  display: flex;
+  margin-top: var(--s2);
+}
+
+.stepper-button {
+  font-size: var(--fs-subhead);
+}
+
+.stepper-button + .stepper-button {
+  margin-left: -1px;
+}
+
+/* Errors: black text on a red 4 px rule (the only non-player use of red; errors are rare). */
+.field-error {
+  margin-top: var(--s1);
+  border-left: 4px solid var(--p1);
+  padding-left: var(--s1);
+}
+
+/* --- HUD ------------------------------------------------------------------------------------- */
+
+.hud-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  height: 96px;
+}
+
+.hud-player {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+/* Centre the 16 px glyph on the 48 px label line, not on label + caption. */
+.hud-player > .player-glyph {
+  flex: none;
+  margin-top: 16px;
+}
+
+.hud-label {
+  white-space: nowrap;
+}
+
+.hud-caption {
+  margin-top: 2px;
+}
+
+.hud-facts {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: var(--s1);
+}
+
+.hud-facts li {
+  padding: 0 var(--s2);
+  border-left: 1px solid var(--black);
+  white-space: nowrap;
+}
+
+.hud-facts li:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.hud-menu {
+  position: relative;
+  margin-left: auto;
+}
+
+.hud-menu-panel {
+  position: absolute;
+  top: calc(100% + var(--s1));
+  right: 0;
+  z-index: 30;
+  display: grid;
+  gap: var(--s2);
+  width: max-content;
+  max-width: 360px;
+  border: 1px solid var(--black);
+  padding: var(--s3);
+  background: var(--white);
+}
+
+.hud-alert {
+  height: 4px;
+}
+
+.hud-alert--p1 {
+  background: var(--p1);
+}
+
+.hud-alert--p2 {
+  background: var(--p2);
+}
+
+/* --- Toast ----------------------------------------------------------------------------------- */
+
+.toast {
+  min-height: 0;
+}
+
+.toast-message {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin-top: var(--s2);
+  border-left: 4px solid var(--black);
+  padding-left: var(--s1);
+}
+
+/* --- Start screen ---------------------------------------------------------------------------- */
+
+.start {
+  padding-top: var(--s6);
+  padding-bottom: var(--s12);
+}
+
+.start-bar {
+  margin-bottom: var(--s3);
+}
+
+/* 96 px display, scaled down only where the longest line would not fit 7 columns. */
+.start-title {
+  font-size: clamp(56px, 7.5vw, var(--fs-display));
+  line-height: calc(88 / 96);
+}
+
+.start-pitch {
+  margin-top: var(--s4);
+}
+
+.form-section {
+  margin-top: var(--s8);
+}
+
+.section-label {
+  margin-bottom: var(--s3);
+  border-bottom: 1px solid var(--black);
+  padding-bottom: var(--s1);
+}
+
+.space-choice {
+  max-width: calc((100% + var(--gutter)) * 5 / 7 - var(--gutter));
+}
+
+.space-facts {
+  margin-top: var(--s3);
+}
+
+.space-facts-list {
+  margin-top: var(--s2);
+}
+
+/* Cells and Winning lines: two 48 px numerals on 2-column tracks. */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, calc((100% + var(--gutter)) * 2 / 7 - var(--gutter)));
+  column-gap: var(--gutter);
+  margin-top: var(--s3);
+}
+
+.stats dt {
+  margin-bottom: var(--s1);
+}
+
+/*
+ * Four steppers, each exactly two grid columns wide, so every left edge is on the grid. Four
+ * two-column tracks need eight columns: the row reaches one column past the form zone, where the
+ * diagram column is always empty at this height.
+ */
+.steppers {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: var(--gutter);
+  width: calc((100% + var(--gutter)) * 8 / 7 - var(--gutter));
+}
+
+.start-actions {
+  margin-top: var(--s6);
+}
+
+.start-note {
+  margin-top: var(--s2);
+}
+
+.start-diagram {
+  padding-top: var(--s1);
+}
+
+@media (max-width: 1023px) {
+  .steppers,
+  .space-choice {
+    width: 100%;
+    max-width: none;
   }
 
-  .screen h1 {
-    max-width: 100%;
+  .start-diagram {
+    max-width: 560px;
+    margin-top: var(--s8);
   }
+}
+
+@media (max-width: 640px) {
+  .steppers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: var(--s4);
+  }
+}
+
+/* --- Space diagram --------------------------------------------------------------------------- */
+
+.diagram-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.diagram-svg line,
+.diagram-svg path {
+  fill: none;
+  stroke: var(--black);
+  stroke-linecap: square;
+  vector-effect: non-scaling-stroke;
+}
+
+.diagram-edge {
+  stroke-width: 2;
+}
+
+.diagram-thin {
+  stroke-width: 1;
+}
+
+.diagram-hidden {
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  stroke-linecap: butt !important;
+}
+
+.diagram-svg .diagram-fill {
+  fill: var(--white);
+  stroke: none;
+}
+
+.diagram-svg .diagram-plate {
+  fill: var(--white);
+  stroke-width: 1;
+}
+
+.diagram-svg .diagram-leader {
+  stroke: var(--grey-30);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  stroke-linecap: butt;
+}
+
+.diagram-letter {
+  fill: var(--black);
+  font-size: calc(var(--fs-caption) * var(--u, 1));
+  font-weight: 700;
+}
+
+.diagram-callout {
+  fill: var(--black);
+  font-size: calc(var(--fs-caption) * var(--u, 1));
+}
+
+.diagram figcaption {
+  margin-top: var(--s3);
+}
+
+.diagram-legend {
+  margin-bottom: var(--s2);
+  border-top: 1px solid var(--black);
+}
+
+.diagram-legend-row {
+  display: grid;
+  grid-template-columns: var(--s4) 7em 1fr;
+  border-bottom: 1px solid var(--grey-30);
+  padding: 4px 0 3px;
+}
+
+/* --- Temporary game screens ------------------------------------------------------------------ */
+
+.temp-screen {
+  padding-top: var(--s6);
+  padding-bottom: var(--s12);
+}
+
+.temp-flag {
+  margin-bottom: var(--s1);
+  color: var(--grey-60);
+}
+
+.temp-title {
+  margin: var(--s3) 0 var(--s4);
+}
+
+.temp-side {
+  display: grid;
+  gap: var(--s1);
+  padding-top: calc(var(--s6) + var(--lh-caption) + var(--s1) + 4px + var(--s3));
+}
+
+.node-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.node-table th {
+  border-bottom: 1px solid var(--black);
+  padding: 0 var(--s2) var(--s1) 0;
+  font-weight: 400;
+  text-align: left;
+}
+
+.node-table td {
+  border-bottom: 1px solid var(--grey-30);
+  padding: var(--s1) var(--s2) var(--s1) 0;
+  vertical-align: middle;
+}
+
+.node-table td:last-child {
+  padding-right: 0;
+  text-align: right;
+}
+
+.inline-glyph {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.facts {
+  display: grid;
+  gap: var(--s2);
+  margin-bottom: var(--s6);
+}
+
+.facts dt {
+  margin-bottom: 4px;
 }
