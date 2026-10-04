@@ -9,12 +9,32 @@ import {
 } from '@/geometry';
 import { createMaterials } from './materials';
 import { ResourceRegistry } from './registry';
-import { HEX_FACES, hexTriangles } from './hexahedron';
+import { HEX_FACES, hexEdgeIndices, hexTriangles } from './hexahedron';
 import { pickCell, pickHit } from './picking';
-import { GHOST_LAYER, HoverBox, SCHLEGEL_PICK_SHRINK, buildScene } from './scene';
-import { buildSceneModel, type SceneInput, type Vec3 } from './sceneModel';
-import { rotation4 } from './four';
+import {
+  BALL_TRIANGLES,
+  GHOST_LAYER,
+  HoverBox,
+  SCHLEGEL_PICK_SHRINK,
+  buildScene,
+  type BoardScene,
+} from './scene';
+import { buildSceneModel, toWorld, type SceneInput, type Vec3 } from './sceneModel';
+import {
+  CAMERA_W_FACTOR,
+  cellCentre4,
+  cellCorners4,
+  project4to3,
+  rotation4,
+  type Planes4,
+  type Vec4,
+} from './four';
+import { BALL, LAST_MOVE_SIZE, MARK_SIZE, THREAT_SIZE } from './marks4';
 import { trace } from './tracer';
+
+/** Marks in a mark mesh: instances of a glyph, or shapes merged into one projected geometry. */
+const items = (mesh: Mesh) =>
+  mesh instanceof InstancedMesh ? mesh.count : (mesh.geometry.userData as { items: number }).items;
 
 function sample(id: TopologyId, n: number): SceneInput {
   const topology = createTopology(id, n);
@@ -60,10 +80,13 @@ describe('buildScene (node, no WebGL)', () => {
     const materials = createMaterials();
     const scene = buildScene(model, materials, registry);
     const { marks, cells, cellHexes, wires } = scene.parts;
-    expect(marks[0].count).toBe(2); // cells 0 and 1 (9 is received: drawn as a wire)
-    expect(marks[1].count).toBe(2);
-    // The Schlegel diagram picks by the cells' true shapes, merged; elsewhere by unit boxes.
+    expect(items(marks[0])).toBe(2); // cells 0 and 1 (9 is received: drawn as a wire)
+    expect(items(marks[1])).toBe(2);
+    // The Schlegel diagram draws marks in their true projected shapes and picks by the cells'
+    // true shapes, merged; elsewhere unit glyphs (instanced) and unit pick boxes.
     const schlegel = id === 'tesseract';
+    expect(marks.every((m) => m instanceof InstancedMesh)).toBe(!schlegel);
+    expect(scene.parts.projected === null).toBe(!schlegel);
     expect(cells?.count ?? cellHexes?.geometry.getAttribute('position').count).toBe(
       input.topology.cellCount * (schlegel ? 8 : 1),
     );
@@ -84,8 +107,8 @@ describe('buildScene (node, no WebGL)', () => {
     });
     // grid, P1 cube edges, 1 received, 1 last move, 2 threats (a LineSegments2 is a Mesh).
     expect(lines).toBe(6);
-    // 2 mark kinds, the pick boxes (merged in the Schlegel diagram), the win tube and joints.
-    expect(instanced).toBe(schlegel ? 4 : 5);
+    // 2 mark kinds and the pick boxes (merged in the Schlegel diagram), the win tube and joints.
+    expect(instanced).toBe(schlegel ? 2 : 5);
     expect(scene.root.children.length).toBeLessThan(16);
 
     expect(registry.live).toBeGreaterThan(0);
@@ -107,7 +130,7 @@ describe('buildScene (node, no WebGL)', () => {
     });
     const registry = new ResourceRegistry();
     const scene = buildScene(model, createMaterials(), registry);
-    expect(scene.parts.marks.map((m) => m.count)).toEqual([0, 0]);
+    expect(scene.parts.marks.map(items)).toEqual([0, 0]);
     scene.dispose();
     expect(registry.live).toBe(0);
   });
@@ -368,5 +391,254 @@ describe('tintHex', () => {
     expect(tintHex('#000000', 0.5)).toBe('#808080');
     expect(tintHex('#e30613', 1)).toBe('#e30613');
     expect(tintHex('#005bbb', 0)).toBe('#ffffff');
+  });
+});
+
+describe('buildScene: Schlegel marks in their projected shapes', () => {
+  const n = 3;
+  const n3 = n ** 3;
+  // P1 and P2 marks in the outer (w+), inner (w−) and wedge cubes, and a received one of each.
+  // Sorted: the model lists marks in cell order.
+  const byId = (a: number, b: number) => a - b;
+  const P1 = [0, 1, 6 * n3 + 13, 7 * n3 + 4, 2 * n3 + 13, 4 * n3 + 8].sort(byId);
+  const P2 = [2, 5, 6 * n3 + 22, 7 * n3 + 20, 3 * n3 + 13, 5 * n3 + 0].sort(byId);
+  function marked(): SceneInput {
+    const base = sample('tesseract', n);
+    const board = new Uint8Array(base.topology.cellCount);
+    for (const c of [...P1, 9]) board[c] = 1;
+    for (const c of [...P2, 30]) board[c] = 2;
+    return { ...base, board, received: new Set([9, 30]) };
+  }
+  const t = marked().topology as TesseractSurface;
+  const planesOf = (deg: number, yw = 0): Planes4 => ({ xw: (deg * Math.PI) / 180, yw, zw: 0 });
+
+  /** The expected scene points, from the 4D construction (independent of `marks4.ts`). */
+  function expected(planes4: Planes4) {
+    const R = rotation4(planes4);
+    const scene = (p: readonly number[]) =>
+      toWorld(project4to3(p as unknown as Vec4, R, CAMERA_W_FACTOR * n).p);
+    const box = (cell: number, f: number) => {
+      const corners = cellCorners4(t, cell);
+      const c = [0, 1, 2, 3].map((k) => corners.reduce((acc, p) => acc + p[k]!, 0) / 8);
+      return corners.map((p) => scene(p.map((v, k) => c[k]! + f * (v - c[k]!))));
+    };
+    const ball = (cell: number) => {
+      const centre = cellCentre4(t, cell);
+      const corners = cellCorners4(t, cell);
+      const axes = [1, 2, 4].map((b) => corners[b]!.map((v, k) => v - corners[0]![k]!));
+      return Array.from({ length: BALL.count }, (_, v) =>
+        scene(
+          centre.map(
+            (x, k) =>
+              x +
+              (MARK_SIZE / 2) *
+                [0, 1, 2].reduce((acc, j) => acc + BALL.vertices[3 * v + j]! * axes[j]![k]!, 0),
+          ),
+        ),
+      );
+    };
+    return { box, ball };
+  }
+
+  const vertices = (geometry: { getAttribute(name: 'position'): { array: ArrayLike<number> } }) => {
+    const a = geometry.getAttribute('position').array;
+    return Array.from({ length: a.length / 3 }, (_, i): Vec3 => [
+      a[3 * i]!,
+      a[3 * i + 1]!,
+      a[3 * i + 2]!,
+    ]);
+  };
+  const near = (got: readonly Vec3[], want: readonly Vec3[]) => {
+    expect(got).toHaveLength(want.length);
+    got.forEach((p, i) => p.forEach((v, k) => expect(v).toBeCloseTo(want[i]![k]!, 4)));
+  };
+
+  /** Check every projected part against the 4D construction; returns the fills' windings. */
+  function check(scene: BoardScene, planes4: Planes4): Set<number> {
+    const { box, ball } = expected(planes4);
+    const pr = scene.parts.projected!;
+    const [p1, p2] = pr.fills;
+    near(
+      vertices(p1.geometry),
+      P1.flatMap((c) => box(c, MARK_SIZE)),
+    );
+    near(
+      vertices(p2.geometry),
+      P2.flatMap((c) => ball(c)),
+    );
+    // The white edges are drawn on the boxes' own vertices.
+    expect(pr.edges.geometry.getAttribute('position')).toBe(p1.geometry.getAttribute('position'));
+    near(vertices(pr.received[0]!.geometry), box(9, MARK_SIZE));
+    near(vertices(pr.received[1]!.geometry), ball(30));
+    expect(pr.received[1]!.geometry.getIndex()?.count).toBe(BALL.wire.length);
+    near(vertices(pr.lastMove!.geometry), box(5, LAST_MOVE_SIZE));
+    // Threats: the 12 edges of the 4D-shrunk cell, as dashed segments.
+    for (const [p, cell] of [
+      [0, 3],
+      [1, 4],
+    ] as const) {
+      const corners = box(cell, THREAT_SIZE);
+      near(
+        vertices(pr.threats[p]!.geometry),
+        hexEdgeIndices().map((i) => corners[i]!),
+      );
+      expect(Array.from(pr.threats[p]!.geometry.getAttribute('lineDistance').array)).toEqual(
+        Array.from({ length: 24 }, (_, i) => i % 2),
+      );
+    }
+    // Every filled triangle faces outwards, whichever way the projection turned its cell.
+    const signs = new Set<number>();
+    for (const [p, fill] of pr.fills.entries()) {
+      const pos = vertices(fill.geometry);
+      const index = Array.from(fill.geometry.getIndex()!.array);
+      const per = p === 0 ? 8 : BALL.count;
+      const tris = p === 0 ? 12 : BALL_TRIANGLES;
+      for (let m = 0; m < index.length / (3 * tris); m++) {
+        const own = pos.slice(m * per, (m + 1) * per);
+        const mid = [0, 1, 2].map((k) => own.reduce((acc, q) => acc + q[k]!, 0) / per);
+        for (let k = m * tris * 3; k < (m + 1) * tris * 3; k += 3) {
+          const [a, b, c] = [0, 1, 2].map((j) => pos[index[k + j]!]!);
+          expect(Math.floor(index[k]! / per)).toBe(m);
+          const u = b!.map((v, j) => v - a![j]!);
+          const w = c!.map((v, j) => v - a![j]!);
+          const nrm = [
+            u[1]! * w[2]! - u[2]! * w[1]!,
+            u[2]! * w[0]! - u[0]! * w[2]!,
+            u[0]! * w[1]! - u[1]! * w[0]!,
+          ];
+          const out = nrm.reduce(
+            (acc, v, j) => acc + v * ((a![j]! + b![j]! + c![j]!) / 3 - mid[j]!),
+            0,
+          );
+          expect(out).toBeGreaterThan(0);
+        }
+        if (p === 0) signs.add(index[m * 36 + 1]! - m * 8 === 4 ? 1 : -1);
+      }
+    }
+    return signs;
+  }
+
+  it.each([0, 40, 80])('XW %i°: every mark is its cell’s 4D shape, projected', (deg) => {
+    const planes4 = planesOf(deg);
+    const registry = new ResourceRegistry();
+    const scene = buildScene(buildSceneModel(marked(), { planes4 }), createMaterials(), registry);
+    check(scene, planes4);
+    const pr = scene.parts.projected!;
+    expect(pr.fills.map(items)).toEqual([P1.length, P2.length]);
+    expect(pr.fills.map((f) => f.name)).toEqual(['marks-p1', 'marks-p2']);
+    expect(scene.parts.marks).toEqual(pr.fills);
+    scene.dispose();
+    expect(registry.live).toBe(0);
+  });
+
+  it('a 4D turn rewrites every mark buffer in place, re-winding mirrored marks', () => {
+    const registry = new ResourceRegistry();
+    const scene = buildScene(buildSceneModel(marked()), createMaterials(), registry);
+    const live = registry.live;
+    const pr = scene.parts.projected!;
+    const parts = [...pr.fills, pr.edges, ...pr.received, pr.lastMove, ...pr.threats];
+    const attrs = parts.map((o) => o!.geometry.getAttribute('position'));
+    const indices = parts.map((o) => o!.geometry.getIndex());
+    const signs = new Set<number>();
+    for (const [deg, yw] of [
+      [40, 0],
+      [80, 0.3],
+      [130, 0.7],
+      [200, 1.3],
+      [300, 2.1],
+    ] as const) {
+      const planes4 = planesOf(deg, yw);
+      expect(scene.refresh(buildSceneModel(marked(), { planes4 }))).toBe(true);
+      for (const s of check(scene, planes4)) signs.add(s);
+      parts.forEach((o, i) => {
+        expect(o!.geometry.getAttribute('position')).toBe(attrs[i]);
+        expect(o!.geometry.getIndex()).toBe(indices[i]);
+      });
+    }
+    // The projection mirrored some marks along the way, and they were re-wound.
+    expect(signs.size).toBe(2);
+    expect(registry.live).toBe(live);
+    // Other marks (same kinds, other cells) cannot be refreshed: the pick tables would be stale.
+    const other = marked();
+    const board = other.board.slice();
+    board[P1[0]!] = 0;
+    board[8] = 1;
+    expect(scene.refresh(buildSceneModel({ ...other, board }))).toBe(false);
+    scene.dispose();
+    expect(registry.live).toBe(0);
+  });
+
+  it.each([0, 40, 80])('XW %i°: a ray picks the nearest mark by its projected shape', (deg) => {
+    const scene = buildScene(
+      buildSceneModel(marked(), { planes4: planesOf(deg) }),
+      createMaterials(),
+    );
+    const pr = scene.parts.projected!;
+    // Every mark is convex: its outward face planes, for an independent Cyrus–Beck test.
+    const shapes = pr.fills.flatMap((fill, p) => {
+      const pos = vertices(fill.geometry);
+      const index = Array.from(fill.geometry.getIndex()!.array);
+      const per = p === 0 ? 8 : BALL.count;
+      const tris = (p === 0 ? 12 : BALL_TRIANGLES) * 3;
+      return (p === 0 ? P1 : P2).map((cell, m) => {
+        const own = pos.slice(m * per, (m + 1) * per);
+        const mid = [0, 1, 2].map((k) => own.reduce((acc, q) => acc + q[k]!, 0) / per);
+        const faces = [];
+        for (let k = m * tris; k < (m + 1) * tris; k += 3) {
+          const [a, b, c] = [0, 1, 2].map((j) => pos[index[k + j]!]!);
+          const u = b!.map((v, j) => v - a![j]!);
+          const w = c!.map((v, j) => v - a![j]!);
+          let nn: Vec3 = [
+            u[1]! * w[2]! - u[2]! * w[1]!,
+            u[2]! * w[0]! - u[0]! * w[2]!,
+            u[0]! * w[1]! - u[1]! * w[0]!,
+          ];
+          if (
+            nn[0] * (mid[0]! - a![0]!) + nn[1] * (mid[1]! - a![1]!) + nn[2] * (mid[2]! - a![2]!) >
+            0
+          ) {
+            nn = [-nn[0], -nn[1], -nn[2]];
+          }
+          faces.push({ n: nn, d: nn[0] * a![0]! + nn[1] * a![1]! + nn[2] * a![2]! });
+        }
+        return { cell, mid: new Vector3(...mid), faces };
+      });
+    });
+    const eye = new Vector3(9, 7, 11);
+    const raycaster = new Raycaster();
+    let own = 0;
+    for (const shape of shapes) {
+      const dir = shape.mid.clone().sub(eye).normalize();
+      raycaster.set(eye, dir);
+      const cell = pickCell(
+        scene.pickLayers.map((layer) => ({
+          table: layer.table,
+          hits: raycaster
+            .intersectObject(layer.mesh, false)
+            .map((h) => pickHit(h, layer.trianglesPerItem)),
+        })),
+      );
+      const entries = shapes.map((s) => entry(eye, dir, s.faces));
+      const best = shapes[entries.indexOf(Math.min(...entries))]!;
+      expect(entries[shapes.indexOf(shape)]).toBeLessThan(Infinity);
+      expect(cell).toBe(best.cell);
+      if (cell === shape.cell) own++;
+    }
+    expect(own).toBeGreaterThanOrEqual(shapes.length / 2);
+    scene.dispose();
+  });
+
+  it('the net and the cubic spaces keep instanced unit cubes and spheres', () => {
+    const net = buildScene(buildSceneModel(marked(), { net: true }), createMaterials());
+    expect(net.parts.projected).toBeNull();
+    expect(net.parts.marks.every((m) => m instanceof InstancedMesh)).toBe(true);
+    expect(net.parts.marks.map(items)).toEqual([P1.length, P2.length]);
+    const geometryOf = (m: Mesh) => m.geometry.type;
+    expect(net.parts.marks.map(geometryOf)).toEqual(['BoxGeometry', 'SphereGeometry']);
+    net.dispose();
+    const flat = buildScene(buildSceneModel(sample('flat', 3)), createMaterials());
+    expect(flat.parts.projected).toBeNull();
+    expect(flat.parts.marks.map(geometryOf)).toEqual(['BoxGeometry', 'SphereGeometry']);
+    flat.dispose();
   });
 });

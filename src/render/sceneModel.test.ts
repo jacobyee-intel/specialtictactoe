@@ -8,7 +8,14 @@ import {
   type Topology,
   type TopologyId,
 } from '@/geometry';
-import { CAMERA_W_FACTOR, cellCorners4, project4to3, rotation4, type Planes4 } from './four';
+import {
+  CAMERA_W_FACTOR,
+  apply4,
+  cellCorners4,
+  project4to3,
+  rotation4,
+  type Planes4,
+} from './four';
 import { HEX_FACES } from './hexahedron';
 import { buildSceneModel, netToWorld, toWorld, type SceneInput, type Vec3 } from './sceneModel';
 
@@ -209,6 +216,12 @@ describe('buildSceneModel: tesseract', () => {
         );
         expect(corners).toHaveLength(8);
         corners.forEach((p, i) => p.forEach((v, k) => expect(v).toBeCloseTo(expected[i]![k]!, 12)));
+        // …and the same corners in R⁴ after the rotation, which the marks are built from.
+        const rotated = model.cells[c]?.corners4 ?? [];
+        expect(rotated).toHaveLength(8);
+        cellCorners4(topology, c).forEach((p, i) =>
+          apply4(R, p).forEach((v, k) => expect(rotated[i]![k]).toBeCloseTo(v, 12)),
+        );
         // A central projection keeps the faces planar.
         for (const [a, b, d, e] of HEX_FACES) {
           const o = corners[a]!;
@@ -222,12 +235,16 @@ describe('buildSceneModel: tesseract', () => {
       }
       // Marks, the last move and threats keep the shape along with the uniform size.
       expect(model.marks[0]?.corners).toBe(model.cells[0]?.corners);
+      expect(model.marks[0]?.corners4).toBe(model.cells[0]?.corners4);
+      expect(model.cameraW).toBe(CAMERA_W_FACTOR * n);
     },
   );
 
   it('carries no corners where cells are true cubes (cubic spaces, the net)', () => {
     const tesseract = createTopology('tesseract', 3);
     expect(buildSceneModel(input(tesseract), { net: true }).cells[0]?.corners).toBeUndefined();
+    expect(buildSceneModel(input(tesseract), { net: true }).cells[0]?.corners4).toBeUndefined();
+    expect(buildSceneModel(input(tesseract), { net: true }).cameraW).toBeNull();
     expect(buildSceneModel(input(createTopology('flat', 3))).cells[0]?.corners).toBeUndefined();
     const cover = buildSceneModel(input(createTopology('torus3', 3)), { ghosts: 'all' });
     expect(cover.cells[0]?.corners).toBeUndefined();

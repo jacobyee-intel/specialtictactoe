@@ -51,19 +51,21 @@ import {
 import {
   CAMERA_W_FACTOR,
   DEFAULT_PLANES4,
+  apply4,
   cellCentre4,
   cellCorners4,
   hypercubeEdges4,
   project4to3,
   rotation4,
   schlegelRadius,
+  type Mat4,
   type Planes4,
   type Vec3,
   type Vec4,
 } from './four';
 import { netPlacements, netPoint, netRidges, ridgeOf, type NetPlacement } from './net';
 
-export type { Vec3 };
+export type { Vec3, Vec4 };
 
 /** What the scene model needs from a node: structurally the 2D board's `BoardView`. */
 export interface SceneInput {
@@ -116,9 +118,15 @@ export interface Placement {
   /**
    * Schlegel diagram only: the cell's true shape there, a skewed hexahedron, as its 8 projected
    * corners in the order of `cellCorners4` (see `hexahedron.ts`). The hover highlight and the
-   * pick shapes follow it; marks stay uniform glyphs of `size`.
+   * pick shapes follow it.
    */
   readonly corners?: readonly Vec3[];
+  /**
+   * Schlegel diagram only: the same 8 corners in R⁴ after the 4D rotation, before the
+   * projection. The marks, the last-move outline and the threat boxes are built from them in
+   * 4D and projected vertex by vertex (`marks4.ts`), so they share the cell's skew.
+   */
+  readonly corners4?: readonly Vec4[];
 }
 
 export interface MarkInstance extends Placement {
@@ -141,6 +149,8 @@ export interface SceneModel {
   readonly key: string;
   readonly mode: ViewMode;
   readonly n: number;
+  /** Schlegel diagram only: the 4D eye's w, which projects the marks' 4D vertices; else null. */
+  readonly cameraW: number | null;
   /** One placement per cell, indexed by `CellId` (the pick targets and the hover box). */
   readonly cells: readonly Placement[];
   /** The cells' wire edges as segment endpoints, xyz xyz, for one `LineSegments`. */
@@ -200,6 +210,8 @@ export interface Placer {
    * belongs to, which the net needs (a point on a ridge is in two places once it is cut).
    */
   place(p: readonly number[], cell?: CellId): { readonly pos: Vec3; readonly scale: number };
+  /** The Schlegel diagram's 4D rotation and eye (tesseract, not the net). */
+  readonly schlegel?: { readonly R: Mat4; readonly cameraW: number };
 }
 
 function cubicPlacer(topology: Topology): Placer {
@@ -214,6 +226,7 @@ function tesseractPlacer(t: TesseractSurface, planes: Planes4): Placer {
   const R = rotation4(planes);
   const cameraW = CAMERA_W_FACTOR * t.n;
   return {
+    schlegel: { R, cameraW },
     centre: (cell) => cellCentre4(t, cell),
     place: (p) => {
       const { p: q, scale } = project4to3(p as unknown as Vec4, R, cameraW);
@@ -621,17 +634,36 @@ function cornerTable(t: TesseractSurface): { points: readonly Vec4[]; index: Int
   return table;
 }
 
-/** The 8 scene corners of every tesseract cell, in `cellCorners4` order. */
-export function projectedCorners(t: TesseractSurface, placer: Placer): Vec3[][] {
+/**
+ * The 8 corners of every tesseract cell, in `cellCorners4` order: in R⁴ after the rotation R
+ * (`corners4`), and projected into the scene (`corners`, the same arithmetic as
+ * `project4to3`). Each lattice point is rotated and projected once.
+ */
+export function projectedCorners(
+  t: TesseractSurface,
+  R: Mat4,
+  cameraW: number,
+): { corners: Vec3[][]; corners4: Vec4[][] } {
   const { points, index } = cornerTable(t);
-  const at = points.map((p) => placer.place(p).pos);
-  const out: Vec3[][] = [];
+  const rot = points.map((p) => apply4(R, p));
+  const at = rot.map(([x, y, z, w]) => {
+    const scale = cameraW / (cameraW - w);
+    return toWorld([x * scale, y * scale, z * scale]);
+  });
+  const corners: Vec3[][] = [];
+  const corners4: Vec4[][] = [];
   for (let c = 0; c < t.cellCount; c++) {
-    const corners: Vec3[] = [];
-    for (let i = 0; i < 8; i++) corners.push(at[index[c * 8 + i] as number] as Vec3);
-    out.push(corners);
+    const scene: Vec3[] = [];
+    const four: Vec4[] = [];
+    for (let i = 0; i < 8; i++) {
+      const slot = index[c * 8 + i] as number;
+      scene.push(at[slot] as Vec3);
+      four.push(rot[slot] as Vec4);
+    }
+    corners.push(scene);
+    corners4.push(four);
   }
-  return out;
+  return { corners, corners4 };
 }
 
 /** Build the 3D board of a node. */
@@ -639,16 +671,20 @@ export function buildSceneModel(input: SceneInput, opts: SceneOptions = {}): Sce
   const { topology, board } = input;
   const mode = viewModeOf(topology, opts);
   const placer = placerFor(topology, opts);
-  const corners =
-    mode === 'schlegel' ? projectedCorners(topology as TesseractSurface, placer) : null;
+  const schlegel = mode === 'schlegel' ? (placer.schlegel ?? null) : null;
+  const shapes =
+    schlegel === null
+      ? null
+      : projectedCorners(topology as TesseractSurface, schlegel.R, schlegel.cameraW);
   const cells: Placement[] = [];
   for (let c = 0; c < topology.cellCount; c++) {
     const { pos, scale } = placer.place(placer.centre(c), c);
-    const shape = corners?.[c];
+    const corners = shapes?.corners[c];
+    const corners4 = shapes?.corners4[c];
     cells.push(
-      shape === undefined
+      corners === undefined || corners4 === undefined
         ? { cell: c, pos, size: scale }
-        : { cell: c, pos, size: scale, corners: shape },
+        : { cell: c, pos, size: scale, corners, corners4 },
     );
   }
   const marks: MarkInstance[] = [];
@@ -789,6 +825,7 @@ export function buildSceneModel(input: SceneInput, opts: SceneOptions = {}): Sce
     key: `${topology.id}/${topology.n}/${mode}${mode === 'cover' ? `/${opts.ghosts}` : ''}`,
     mode,
     n: topology.n,
+    cameraW: schlegel?.cameraW ?? null,
     cells,
     wires,
     outline,

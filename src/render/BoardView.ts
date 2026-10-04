@@ -27,6 +27,8 @@
 import {
   Color,
   Matrix4,
+  type Mesh,
+  type LineSegments,
   PerspectiveCamera,
   Raycaster,
   Scene,
@@ -121,6 +123,24 @@ const DEFAULT_OPTIONS: ViewOptions = {
 export interface TraceWalk {
   readonly cells: readonly CellId[];
   readonly dirs: readonly Dir[];
+}
+
+/** One drawn mark of the Schlegel diagram: its cell and its vertices as rendered. */
+export interface DebugMark {
+  readonly cell: CellId;
+  readonly player: number;
+  readonly vertices: number[][];
+  /** Filled marks: the triangles as drawn (vertex indices within the mark). */
+  readonly triangles?: number[];
+}
+
+/** The Schlegel diagram's marks, read back from their buffers (see `ProjectedMarks`). */
+export interface DebugMarks {
+  readonly solid: DebugMark[];
+  readonly received: DebugMark[];
+  readonly lastMove: DebugMark | null;
+  /** Threat boxes as 12 dashed segments (24 vertices). */
+  readonly threats: DebugMark[];
 }
 
 export interface BoardViewDebug {
@@ -409,6 +429,70 @@ export class BoardView {
   /** A cell's projected corners in the Schlegel diagram (E2E), else null. */
   debugCorners(cell: CellId): number[][] | null {
     return this.model?.cells[cell]?.corners?.map((p) => [...p]) ?? null;
+  }
+
+  /** The Schlegel diagram's marks as drawn (E2E), else null. */
+  debugMarks(): DebugMarks | null {
+    const m = this.model;
+    const projected = this.board?.parts.projected;
+    if (m == null || projected == null) return null;
+    const read = (o: Mesh | LineSegments | null, item: number, per: number) => {
+      if (o === null) return [];
+      const a = o.geometry.getAttribute('position');
+      return Array.from({ length: per }, (_, k) => [
+        a.getX(item * per + k),
+        a.getY(item * per + k),
+        a.getZ(item * per + k),
+      ]);
+    };
+    const triangles = (o: Mesh, item: number, per: number) => {
+      const index = o.geometry.getIndex();
+      if (index === null) return [];
+      const count = index.count / Math.max(1, (o.geometry.userData as { items: number }).items);
+      return Array.from(index.array.slice(item * count, (item + 1) * count), (i) => i - item * per);
+    };
+    const slots = [0, 0, 0, 0];
+    const solid: DebugMark[] = [];
+    const received: DebugMark[] = [];
+    for (const mark of m.marks) {
+      const p = mark.player;
+      const per =
+        p === 0
+          ? 8
+          : (projected.fills[1].geometry.userData as { verticesPerItem: number }).verticesPerItem;
+      const k = (mark.received ? 2 : 0) + p;
+      const item = slots[k] as number;
+      slots[k] = item + 1;
+      if (mark.received) {
+        received.push({
+          cell: mark.cell,
+          player: p,
+          vertices: read(projected.received[p], item, per),
+        });
+      } else {
+        const fill = projected.fills[p];
+        solid.push({
+          cell: mark.cell,
+          player: p,
+          vertices: read(fill, item, per),
+          triangles: triangles(fill, item, per),
+        });
+      }
+    }
+    const threatSlots = [0, 0];
+    return {
+      solid,
+      received,
+      lastMove:
+        m.lastMove === null
+          ? null
+          : { cell: m.lastMove.cell, player: -1, vertices: read(projected.lastMove, 0, 8) },
+      threats: m.threats.map((t) => ({
+        cell: t.cell,
+        player: t.player,
+        vertices: read(projected.threats[t.player], (threatSlots[t.player] as number)++, 24),
+      })),
+    };
   }
 
   /** The pick ray through a client (page) point, in the scene (E2E). */
@@ -826,7 +910,8 @@ const samePlanes = (a: Planes4, b: Planes4) =>
  * Dev-only test hook: `window.__board3d.view()` is the live view (camera, frame times, mode, 4D
  * angles, ghosts, landmarks, tracer) and `memory()` the shared renderer's live GPU resources,
  * which must return to zero between views. `set4D` and `autoRotate` drive the 4D view;
- * `cellCorners` and `ray` let the E2E check the Schlegel hover shapes and picking.
+ * `cellCorners` and `ray` let the E2E check the Schlegel hover shapes and picking, and `marks`
+ * the Schlegel marks as drawn.
  */
 function installDebugHook(): void {
   const w = window as unknown as { __board3d?: object };
@@ -844,5 +929,6 @@ function installDebugHook(): void {
     ghostScreen: () => current?.ghostScreen() ?? [],
     cellCorners: (cell: number) => current?.debugCorners(cell) ?? null,
     ray: (x: number, y: number) => current?.debugRay(x, y) ?? null,
+    marks: () => current?.debugMarks() ?? null,
   };
 }

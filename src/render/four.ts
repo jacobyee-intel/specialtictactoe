@@ -148,7 +148,9 @@ export function schlegelRadius(n: number): number {
 
 /**
  * Rotate `p` by `R`, then project it from the 4D eye at (0, 0, 0, cameraW). `scale` is the
- * perspective factor at that depth (1 for w = 0), used to size marks honestly.
+ * perspective factor at that depth (1 for w = 0), which sizes the tracer's walker and trail.
+ * Marks need more than a scale: they are built in 4D and projected vertex by vertex
+ * (`marks4.ts`).
  */
 export function project4to3(p: Vec4, R: Mat4, cameraW: number): { p: Vec3; scale: number } {
   const [x, y, z, w] = apply4(R, p);

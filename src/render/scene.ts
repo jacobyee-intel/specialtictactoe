@@ -8,6 +8,11 @@
  * Only the rare things (received marks, threats, the last move, the win tube) are small extra
  * objects.
  *
+ * In the Schlegel diagram the marks are no uniform glyphs either: each is built in 4D in its
+ * cell and projected like the cell (`marks4.ts`), so it is skewed like the cell. They are
+ * merged per kind (P1 boxes, their edges, P2 balls, received wires, the last move, threats),
+ * and a 4D turn rewrites their positions in place.
+ *
  * A board is rebuilt from scratch when the node or its toggles change: at most 8·4³ = 512 cells
  * (plus 26·6³ ghosts), so this is cheap and keeps the code free of incremental-update bugs. The
  * one exception is turning the tesseract in 4D, which moves every point on every frame: then
@@ -22,6 +27,7 @@ import {
   IcosahedronGeometry,
   BufferAttribute,
   BoxGeometry,
+  DynamicDrawUsage,
   OctahedronGeometry,
   BufferGeometry,
   CylinderGeometry,
@@ -50,16 +56,22 @@ import {
   hexTriangles,
   writeHex,
 } from './hexahedron';
+import {
+  BALL,
+  LAST_MOVE_SIZE,
+  MARK_SIZE,
+  THREAT_SIZE,
+  orientation4,
+  writeBall4,
+  writeBox4,
+  writeTriangles,
+} from './marks4';
 import type { Materials } from './materials';
 import { PickTable } from './picking';
 import { ResourceRegistry } from './registry';
 import type { Bounds, Placement, SceneModel, Segment, Vec3 } from './sceneModel';
 
-/** Mark size as a fraction of the cell, as in 2D (inset 20% on each side). */
-export const MARK_SIZE = 0.6;
-/** The last-move outline sits just outside the mark. */
-const LAST_MOVE_SIZE = 0.76;
-const THREAT_SIZE = 0.86;
+export { MARK_SIZE };
 const WIN_RADIUS = 0.1;
 const TRACE_RADIUS = 0.045;
 const WALKER_SIZE = 0.5;
@@ -81,6 +93,23 @@ export interface PickLayerObject {
   readonly trianglesPerItem?: number;
 }
 
+/**
+ * The Schlegel diagram's marks, in their true projected shapes (see `marks4.ts`), one merged
+ * geometry per kind. Each geometry's `userData` holds `items` and `verticesPerItem`.
+ */
+export interface ProjectedMarks {
+  /** Solid P1 boxes (8 vertices, 12 triangles each) and P2 balls (`BALL`), filled. */
+  readonly fills: readonly [Mesh, Mesh];
+  /** The P1 boxes' 1 px white edges; they share the boxes' positions. */
+  readonly edges: LineSegments;
+  /** Received marks by player, as wire: the box's edges, the ball's lat/long lines. */
+  readonly received: readonly [LineSegments | null, LineSegments | null];
+  /** The last move: the edges of its cell's 4D cube shrunk by `LAST_MOVE_SIZE`. */
+  readonly lastMove: LineSegments | null;
+  /** Threats by player: dashed edges of the cell's 4D cube shrunk by `THREAT_SIZE`. */
+  readonly threats: readonly [LineSegments | null, LineSegments | null];
+}
+
 export interface BoardScene {
   readonly root: Group;
   /** Raycast targets in priority order: visible marks first, then the invisible cell boxes. */
@@ -91,7 +120,13 @@ export interface BoardScene {
   readonly parts: {
     readonly wires: LineSegments;
     readonly outline: LineSegments2;
-    readonly marks: readonly [InstancedMesh, InstancedMesh];
+    /**
+     * The solid marks, by player: instanced unit cubes and spheres, or in the Schlegel diagram
+     * the merged projected shapes (`projected.fills`).
+     */
+    readonly marks: readonly [Mesh, Mesh];
+    /** The Schlegel diagram's marks in their true shapes; null elsewhere. */
+    readonly projected: ProjectedMarks | null;
     /** The cell pick boxes (cubic spaces, cover and net), or null in the Schlegel diagram. */
     readonly cells: InstancedMesh | null;
     /** The Schlegel diagram's pick hexahedra, one per cell, merged; null elsewhere. */
@@ -275,6 +310,215 @@ export function writeSchlegelPicks(geometry: BufferGeometry, cells: readonly Pla
   attr.needsUpdate = true;
 }
 
+/** A P1 box's 12 triangles (wound for a right-handed frame) and 12 edges, from vertex 0. */
+const BOX_TRIANGLES = hexTriangles(1);
+const BOX_LINES = hexEdgeIndices();
+/** Triangles per projected ball: the face → mark map of the P2 pick layer is `face / this`. */
+export const BALL_TRIANGLES = BALL.triangles.length / 3;
+
+/**
+ * A merged geometry of `items` shapes of `vertices` each, positions rewritten in place on every
+ * 4D turn. Every 4D orientation projects into the Schlegel ball, so its bound is fixed.
+ */
+function mergedGeometry(
+  items: number,
+  vertices: number,
+  n: number,
+  position?: BufferAttribute,
+): BufferGeometry {
+  const geometry = new BufferGeometry();
+  const attr =
+    position ??
+    new BufferAttribute(new Float32Array(items * vertices * 3), 3).setUsage(DynamicDrawUsage);
+  geometry.setAttribute('position', attr);
+  geometry.boundingSphere = new Sphere(new Vector3(), schlegelRadius(n) * 1.01);
+  geometry.userData = { items, verticesPerItem: vertices };
+  return geometry;
+}
+
+/** An index of `items` copies of `template`, copy i shifted by i · `stride` vertices. */
+function repeatedIndex(template: readonly number[], items: number, stride: number) {
+  const out = new Uint32Array(template.length * items);
+  for (let i = 0; i < items; i++) {
+    for (let j = 0; j < template.length; j++) {
+      out[i * template.length + j] = (template[j] as number) + i * stride;
+    }
+  }
+  return new BufferAttribute(out, 1);
+}
+
+/** Scratch for one threat box's corners before they are spread over its 12 dashed edges. */
+const threatCorners = new Float32Array(24);
+
+/**
+ * The Schlegel diagram's marks (see {@link ProjectedMarks}). Returns the objects to add, the
+ * pick layers' meshes, and the writer that projects a model's marks into the buffers.
+ */
+function buildProjectedMarks(
+  model: SceneModel,
+  materials: Materials,
+  track: <G extends BufferGeometry>(geometry: G) => G,
+): { marks: ProjectedMarks; objects: Object3D[]; write: (m: SceneModel) => void } {
+  const n = model.n;
+  const kind = (p: 0 | 1, received: boolean) =>
+    model.marks.filter((m) => m.player === p && m.received === received).length;
+  const objects: Object3D[] = [];
+  const named = <O extends Object3D>(object: O, name: string, items: number): O => {
+    object.name = name;
+    object.visible = items > 0;
+    objects.push(object);
+    return object;
+  };
+
+  // Solid marks: filled, wound outwards per mark (a mirrored cell re-winds its mark).
+  const counts = [kind(0, false), kind(1, false)] as const;
+  const shapes = [
+    { vertices: 8, triangles: BOX_TRIANGLES },
+    { vertices: BALL.count, triangles: BALL.triangles },
+  ] as const;
+  const fillGeometry = shapes.map(({ vertices, triangles }, p) => {
+    const geometry = track(mergedGeometry(counts[p] as number, vertices, n));
+    geometry.setIndex(repeatedIndex(triangles, counts[p] as number, vertices));
+    return geometry;
+  });
+  const signs = counts.map((c) => new Int8Array(c).fill(1));
+  const fill = (p: 0 | 1) =>
+    named(
+      new Mesh(fillGeometry[p] as BufferGeometry, materials.mark[p]),
+      `marks-p${p + 1}`,
+      counts[p],
+    );
+  const fills: [Mesh, Mesh] = [fill(0), fill(1)];
+  const p1Positions = fillGeometry[0]?.getAttribute('position') as BufferAttribute;
+  const edgeGeometry = track(mergedGeometry(counts[0], 8, n, p1Positions));
+  edgeGeometry.setIndex(repeatedIndex(BOX_LINES, counts[0], 8));
+  const edges = named(
+    new LineSegments(edgeGeometry, materials.markEdge),
+    'marks-p1-edges',
+    counts[0],
+  );
+
+  // Received marks: wire only.
+  const wires = [
+    { vertices: 8, lines: BOX_LINES },
+    { vertices: BALL.count, lines: BALL.wire },
+  ] as const;
+  const received = wires.map(({ vertices, lines }, p) => {
+    const items = kind(p as 0 | 1, true);
+    if (items === 0) return null;
+    const geometry = track(mergedGeometry(items, vertices, n));
+    geometry.setIndex(repeatedIndex(lines, items, vertices));
+    return named(
+      new LineSegments(geometry, materials.markWire[p]),
+      `marks-p${p + 1}-received`,
+      items,
+    );
+  }) as [LineSegments | null, LineSegments | null];
+
+  let lastMove: LineSegments | null = null;
+  if (model.lastMove !== null) {
+    const geometry = track(mergedGeometry(1, 8, n));
+    geometry.setIndex(BOX_LINES);
+    lastMove = named(new LineSegments(geometry, materials.lastMove), 'last-move', 1);
+  }
+
+  // Threats: dashed, so not indexed (each edge needs its own line distances). The distances
+  // run 0 → 1 along every edge, so the dashes follow the projected edge like the cell's grid.
+  const threats = ([0, 1] as const).map((p) => {
+    const items = model.threats.filter((t) => t.player === p).length;
+    if (items === 0) return null;
+    const geometry = track(mergedGeometry(items, 24, n));
+    const distance = new Float32Array(items * 24);
+    for (let k = 1; k < distance.length; k += 2) distance[k] = 1;
+    geometry.setAttribute('lineDistance', new BufferAttribute(distance, 1));
+    return named(new LineSegments(geometry, materials.threat[p]), `threats-p${p + 1}`, items);
+  }) as [LineSegments | null, LineSegments | null];
+
+  const none = new Float32Array(0);
+  const array = (o: Mesh | LineSegments | null) =>
+    o === null ? none : (o.geometry.getAttribute('position').array as Float32Array);
+  const fillArrays = [array(fills[0]), array(fills[1])] as const;
+  const receivedArrays = [array(received[0]), array(received[1])] as const;
+  const lastArray = array(lastMove);
+  const threatArrays = [array(threats[0]), array(threats[1])] as const;
+  const indexArrays = fillGeometry.map((geometry) => geometry.getIndex()?.array as Uint32Array);
+  const written = [...fills, ...received, lastMove, ...threats].filter(
+    (o): o is Mesh | LineSegments => o !== null,
+  );
+  /** Next free slot per kind: P1, P2, received P1, received P2. */
+  const slot = new Int32Array(4);
+  const rewound = new Uint8Array(2);
+  const threatSlot = new Int32Array(2);
+
+  /** Allocation-free: one pass over the marks, each written at its kind's next slot. */
+  const write = (m: SceneModel) => {
+    const cameraW = m.cameraW ?? 1;
+    slot.fill(0);
+    rewound.fill(0);
+    for (let i = 0; i < m.marks.length; i++) {
+      const mark = m.marks[i] as (typeof m.marks)[number];
+      const rot = mark.corners4;
+      if (rot === undefined) continue;
+      const p = mark.player;
+      if (mark.received) {
+        const item = slot[2 + p] as number;
+        slot[2 + p] = item + 1;
+        if (p === 0) writeBox4(rot, MARK_SIZE, cameraW, receivedArrays[0], 8 * item);
+        else writeBall4(rot, MARK_SIZE / 2, cameraW, BALL, receivedArrays[1], BALL.count * item);
+        continue;
+      }
+      const item = slot[p] as number;
+      slot[p] = item + 1;
+      if (p === 0) writeBox4(rot, MARK_SIZE, cameraW, fillArrays[0], 8 * item);
+      else writeBall4(rot, MARK_SIZE / 2, cameraW, BALL, fillArrays[1], BALL.count * item);
+      // The fill is seen from outside (front faces), so it must be wound outwards.
+      const sign = orientation4(rot, cameraW);
+      const itemSigns = signs[p] as Int8Array;
+      if (sign !== itemSigns[item]) {
+        const shape = shapes[p];
+        itemSigns[item] = sign;
+        const per = shape.triangles.length;
+        writeTriangles(
+          shape.triangles,
+          sign,
+          item * shape.vertices,
+          indexArrays[p] as Uint32Array,
+          item * per,
+        );
+        rewound[p] = 1;
+      }
+    }
+    for (let p = 0; p < 2; p++) {
+      const index = (fillGeometry[p] as BufferGeometry).getIndex();
+      if (rewound[p] === 1 && index !== null) index.needsUpdate = true;
+    }
+    const last = m.lastMove?.corners4;
+    if (last !== undefined && lastArray.length > 0) {
+      writeBox4(last, LAST_MOVE_SIZE, cameraW, lastArray, 0);
+    }
+    threatSlot.fill(0);
+    for (let i = 0; i < m.threats.length; i++) {
+      const threat = m.threats[i] as (typeof m.threats)[number];
+      const out = threatArrays[threat.player];
+      if (threat.corners4 === undefined || out.length === 0) continue;
+      writeBox4(threat.corners4, THREAT_SIZE, cameraW, threatCorners, 0);
+      let o = (threatSlot[threat.player] as number) * 72;
+      threatSlot[threat.player] = (threatSlot[threat.player] as number) + 1;
+      for (let e = 0; e < 24; e++) {
+        const c = BOX_LINES[e] as number;
+        out[o++] = threatCorners[3 * c] as number;
+        out[o++] = threatCorners[3 * c + 1] as number;
+        out[o++] = threatCorners[3 * c + 2] as number;
+      }
+    }
+    for (let i = 0; i < written.length; i++) {
+      (written[i] as Mesh | LineSegments).geometry.getAttribute('position').needsUpdate = true;
+    }
+  };
+
+  return { marks: { fills, edges, received, lastMove, threats }, objects, write };
+}
+
 /** Three orthogonal great circles: the wire version of a sphere. */
 function ringsGeometry(radius: number, segments = 32): BufferGeometry {
   const points: number[] = [];
@@ -323,7 +567,8 @@ function shapeOf(model: SceneModel): string {
     model.wires.length,
     model.outline.length,
     model.selectedOutline?.length ?? -1,
-    model.marks.map((m) => `${m.player}${m.received ? 'r' : ''}`).join(''),
+    // The cells too: the marks' pick tables are built with the objects, not rewritten.
+    model.marks.map((m) => `${m.cell}${'abAB'[m.player + (m.received ? 2 : 0)]}`).join(''),
     model.lastMove !== null,
     model.threats.map((t) => t.player).join(''),
     model.win?.paths.map((p) => p.length) ?? null,
@@ -370,21 +615,47 @@ export function buildScene(
     parts.push(sel);
   }
 
-  // --- marks ---
+  // --- marks: true projected shapes in the Schlegel diagram, unit glyphs elsewhere ---
   const box = g(new BoxGeometry(1, 1, 1));
-  const sphere = g(new SphereGeometry(0.5, 24, 16));
-  const marks: [InstancedMesh, InstancedMesh] = [
-    instancedMesh(box, materials.mark[0], solidMarks(model, 0).length, registry),
-    instancedMesh(sphere, materials.mark[1], solidMarks(model, 1).length, registry),
-  ];
-  marks[0].name = 'marks-p1';
-  marks[1].name = 'marks-p2';
-  writers.push((m) => {
-    for (const p of [0, 1] as const) {
-      const list = solidMarks(m, p);
-      writeInstances(marks[p], list.length, (i) => placeMatrix(list[i] as Placement, MARK_SIZE));
-    }
-  });
+  const boxEdges = g(new EdgesGeometry(box));
+  const markTable = (p: 0 | 1) => new PickTable(solidMarks(model, p).map((m) => m.cell));
+  let marks: [Mesh, Mesh];
+  let projected: ProjectedMarks | null = null;
+  let markLayers: PickLayerObject[];
+  if (model.mode === 'schlegel') {
+    const built = buildProjectedMarks(model, materials, g);
+    projected = built.marks;
+    marks = [built.marks.fills[0], built.marks.fills[1]];
+    writers.push(built.write);
+    parts.push(...built.objects);
+    // Picked by their projected triangles, which lie inside their cells.
+    markLayers = [
+      { mesh: marks[0], table: markTable(0), trianglesPerItem: HEX_TRIANGLES },
+      { mesh: marks[1], table: markTable(1), trianglesPerItem: BALL_TRIANGLES },
+    ];
+  } else {
+    const sphere = g(new SphereGeometry(0.5, 24, 16));
+    const instanced: [InstancedMesh, InstancedMesh] = [
+      instancedMesh(box, materials.mark[0], solidMarks(model, 0).length, registry),
+      instancedMesh(sphere, materials.mark[1], solidMarks(model, 1).length, registry),
+    ];
+    instanced[0].name = 'marks-p1';
+    instanced[1].name = 'marks-p2';
+    writers.push((m) => {
+      for (const p of [0, 1] as const) {
+        const list = solidMarks(m, p);
+        writeInstances(instanced[p], list.length, (i) =>
+          placeMatrix(list[i] as Placement, MARK_SIZE),
+        );
+      }
+    });
+    marks = instanced;
+    markLayers = [
+      { mesh: instanced[0], table: markTable(0) },
+      { mesh: instanced[1], table: markTable(1) },
+    ];
+    parts.push(...instanced);
+  }
 
   let cells: InstancedMesh | null = null;
   let cellHexes: Mesh | null = null;
@@ -401,7 +672,7 @@ export function buildScene(
       table: PickTable.identity(model.cells.length),
       trianglesPerItem: HEX_TRIANGLES,
     };
-    parts.push(...marks, cellHexes);
+    parts.push(cellHexes);
   } else {
     const boxes = instancedMesh(box, materials.pick, model.cells.length, registry);
     boxes.name = 'pick-cells';
@@ -411,11 +682,10 @@ export function buildScene(
     );
     cells = boxes;
     cellLayer = { mesh: boxes, table: PickTable.identity(model.cells.length) };
-    parts.push(...marks, boxes);
+    parts.push(boxes);
   }
 
-  const boxEdges = g(new EdgesGeometry(box));
-  if (solidMarks(model, 0).length > 0) {
+  if (projected === null && solidMarks(model, 0).length > 0) {
     const edgeGeometry = g(new BufferGeometry());
     edgeGeometry.setAttribute(
       'position',
@@ -451,17 +721,19 @@ export function buildScene(
     );
     parts.push(...lines);
   };
-  const rings = g(ringsGeometry(0.5));
-  lineCopies(boxEdges, materials.markWire[0], (m) => receivedMarks(m, 0), MARK_SIZE);
-  lineCopies(rings, materials.markWire[1], (m) => receivedMarks(m, 1), MARK_SIZE);
-  lineCopies(
-    boxEdges,
-    materials.lastMove,
-    (m) => (m.lastMove === null ? [] : [m.lastMove]),
-    LAST_MOVE_SIZE,
-  );
+  if (projected === null) {
+    const rings = g(ringsGeometry(0.5));
+    lineCopies(boxEdges, materials.markWire[0], (m) => receivedMarks(m, 0), MARK_SIZE);
+    lineCopies(rings, materials.markWire[1], (m) => receivedMarks(m, 1), MARK_SIZE);
+    lineCopies(
+      boxEdges,
+      materials.lastMove,
+      (m) => (m.lastMove === null ? [] : [m.lastMove]),
+      LAST_MOVE_SIZE,
+    );
+  }
   for (const p of [0, 1] as const) {
-    if (threatsOf(model, p).length === 0) continue;
+    if (projected !== null || threatsOf(model, p).length === 0) continue;
     // Dashed lines need their own geometry: `computeLineDistances` writes into it.
     lineCopies(
       g(new EdgesGeometry(box)),
@@ -631,14 +903,20 @@ export function buildScene(
 
   return {
     root,
-    pickLayers: [
-      { mesh: marks[0], table: new PickTable(solidMarks(model, 0).map((m) => m.cell)) },
-      { mesh: marks[1], table: new PickTable(solidMarks(model, 1).map((m) => m.cell)) },
-      cellLayer,
-      ...ghostLayers,
-    ],
+    pickLayers: [...markLayers, cellLayer, ...ghostLayers],
     ghostTable,
-    parts: { wires, outline, marks, cells, cellHexes, ghostMarks, landmark, trail, walker },
+    parts: {
+      wires,
+      outline,
+      marks,
+      projected,
+      cells,
+      cellHexes,
+      ghostMarks,
+      landmark,
+      trail,
+      walker,
+    },
     refresh: (m) => {
       if (shapeOf(m) !== shape) return false;
       current = m;
