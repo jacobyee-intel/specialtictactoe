@@ -1,6 +1,13 @@
 # Multiverse Tic-Tac-Toe in Impossible Spaces
 
-3D tic-tac-toe played on impossible spaces: the 3-torus (torocosm), quarter-turn space (tetracosm), the first amphicosm (Klein bottle × circle), and the surface of a tesseract, where wrap-around seams and bent geodesics change which cells line up. Splits and time travel grow a branching multiverse of timelines, laid out on a hyperbolic (Poincaré) disk so exponential history always has room to breathe.
+3D tic-tac-toe played on impossible spaces: the 3-torus, quarter-turn space, the first amphicosm, and the surface of a tesseract.
+
+
+This is 3-Dimensional Non-Euclidean Multiversal Tesseract Time Travel Tic Tac Toe with Parallel Universe Transfer and Timeline Splitting.
+
+
+It's as simple as it sounds.
+
 
 ## Play it
 
@@ -10,17 +17,19 @@ https://jacobyee-intel.github.io/specialtictactoe/
 
 Two players share one screen. Player 1 is red squares, Player 2 is blue circles.
 
-1. **Pick a space and a size.** N is the number of cells per side, M is how many in a row win a timeline, W is how many timelines you must win, and L is the round limit. The start screen's diagram shows how the faces of the cube are glued: leave through one face and you come back through the face with the matching arrow, turned or mirrored as drawn.
+1. **Pick a space and a size.** N is the number of cells per side, M is how many in a row win a timeline, W is how many timelines you must win, and L is the round limit. 
 2. **Every timeline where it is your move needs an action.** On each one, choose:
    - **Place:** put a mark on an empty cell.
    - **Split:** copy the board into two timelines, where your opponent moves first.
    - **Time travel:** send one of your marks back to an earlier board where it was your move. The past board branches into a new timeline.
    - **Transfer:** move one of your marks sideways onto another timeline at the same step.
-3. **End your turn** once every timeline has an action. Undo and Clear take actions back before then.
-4. **Win timelines.** M in a row along a straight line through the space, across its seams, wins that timeline. The loser must then make a **forced send-back**: a new mark on an earlier board of that timeline.
+  
+     This readies your actions for commitment in a queue.
+3. **End your turn** once every timeline has an action.
+4. **Win timelines.** M in a row along a straight line through the space, wins that timeline. The loser must then make a **forced send-back**: a new mark on an earlier board of that timeline.
 5. **Win the game** by winning W timelines first. If L rounds pass, the game is a draw. At most 32 timelines can be live at once.
 
-**Reading the board.** A timeline shows the cube as z-slices, x to the right and y down. In the wrapped spaces, the faint ring around each slice holds the cells it is glued to, and the last panel shows slice 0 as seen from above the top slice: unchanged in the 3-torus, turned a quarter turn in the quarter-turn space, mirrored in the amphicosm. The tesseract shows its eight cubes, one at a time or all together. Toggle **Threats** to see lines one mark from completion, and **Open lines** to count the lines still winnable through each cell. Players hand over the seat between turns: the board stays hidden until the next player presses Start turn.
+**Reading the board.** Quite intuitive, actually.
 
 ## Development
 
