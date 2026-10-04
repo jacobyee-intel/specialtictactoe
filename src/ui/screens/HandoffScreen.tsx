@@ -32,8 +32,8 @@ export function HandoffScreen(props: { readonly state: GameState; readonly playe
       </p>
       <p class="t-body t-grey measure handoff-note">
         {sendBack
-          ? 'A timeline has ended and you owe a forced send-back: a new mark in its past.'
-          : 'Take the seat, then start your turn. The board stays hidden until you do.'}
+          ? 'This timeline has been claimed by the opponent. Maybe you can change that...'
+          : 'Make your moves and secure the timelines. Don\'t screw this up.'}
       </p>
       <div class="handoff-actions" ref={button}>
         <Button variant="primary" onClick={startTurn}>

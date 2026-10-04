@@ -56,13 +56,13 @@ export function StartScreen() {
       <div class="grid">
         <main class="col-1-7 start-main">
           <h1 class="t-display t-bold start-title">
-            Multiverse
+            Non-Euclidean
+            <br />
+            Multiversal
+            <br />
+            Time Travel
             <br />
             Tic-Tac-Toe
-            <br />
-            in Impossible
-            <br />
-            Spaces
           </h1>
 
           <section class="form-section" aria-labelledby="space-heading">
