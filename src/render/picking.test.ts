@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PickTable, pickCell } from './picking';
+import { PickTable, pickCell, pickHit } from './picking';
 
 describe('PickTable', () => {
   it('round-trips instance id ↔ cell', () => {
@@ -58,5 +58,31 @@ describe('pickCell', () => {
 
   it('is null when the ray misses', () => {
     expect(pickCell([{ table: cells, hits: [] }])).toBeNull();
+  });
+});
+
+describe('pickHit', () => {
+  it('passes instance hits through and maps merged triangles to their item', () => {
+    expect(pickHit({ instanceId: 4, faceIndex: 30, distance: 2 })).toEqual({
+      instanceId: 4,
+      distance: 2,
+    });
+    expect(pickHit({ faceIndex: 0, distance: 1 }, 12)).toEqual({ instanceId: 0, distance: 1 });
+    expect(pickHit({ faceIndex: 11, distance: 1 }, 12).instanceId).toBe(0);
+    expect(pickHit({ faceIndex: 12, distance: 1 }, 12).instanceId).toBe(1);
+    expect(pickHit({ faceIndex: 12 * 37 + 5, distance: 1 }, 12).instanceId).toBe(37);
+    expect(pickHit({ faceIndex: null, distance: 1 }, 12).instanceId).toBeUndefined();
+    // Through a table: the nearest triangle's hexahedron wins.
+    const table = new PickTable([7, 8, 9]);
+    const cell = pickCell([
+      {
+        table,
+        hits: [
+          { faceIndex: 30, distance: 3 },
+          { faceIndex: 13, distance: 1.5 },
+        ].map((h) => pickHit(h, 12)),
+      },
+    ]);
+    expect(cell).toBe(8);
   });
 });

@@ -52,6 +52,7 @@ import {
   CAMERA_W_FACTOR,
   DEFAULT_PLANES4,
   cellCentre4,
+  cellCorners4,
   hypercubeEdges4,
   project4to3,
   rotation4,
@@ -112,6 +113,12 @@ export interface Placement {
   readonly pos: Vec3;
   /** 1 in the cubic spaces; the perspective scale of the cell's depth in the tesseract. */
   readonly size: number;
+  /**
+   * Schlegel diagram only: the cell's true shape there, a skewed hexahedron, as its 8 projected
+   * corners in the order of `cellCorners4` (see `hexahedron.ts`). The hover highlight and the
+   * pick shapes follow it; marks stay uniform glyphs of `size`.
+   */
+  readonly corners?: readonly Vec3[];
 }
 
 export interface MarkInstance extends Placement {
@@ -579,15 +586,70 @@ function cubicTraceSteps(
   return { steps, stops: stops.map(toWorld) };
 }
 
+/**
+ * The corners of every tesseract cell as indices into the distinct 4D lattice points they use
+ * (neighbouring cells share corners), so each point is projected once per frame: at N = 4 that
+ * is 544 points instead of 4096 corners. Built once per topology.
+ */
+const cornerTables = new WeakMap<
+  TesseractSurface,
+  { readonly points: readonly Vec4[]; readonly index: Int32Array }
+>();
+
+function cornerTable(t: TesseractSurface): { points: readonly Vec4[]; index: Int32Array } {
+  const cached = cornerTables.get(t);
+  if (cached !== undefined) return cached;
+  const h = t.n / 2;
+  const slots = new Map<number, number>();
+  const points: Vec4[] = [];
+  const index = new Int32Array(t.cellCount * 8);
+  for (let c = 0; c < t.cellCount; c++) {
+    cellCorners4(t, c).forEach((p, i) => {
+      // Corner coordinates are integers once shifted by h, in 0..N.
+      const key = p.reduce((k, v) => k * (t.n + 1) + (v + h), 0);
+      let slot = slots.get(key);
+      if (slot === undefined) {
+        slot = points.length;
+        slots.set(key, slot);
+        points.push(p);
+      }
+      index[c * 8 + i] = slot;
+    });
+  }
+  const table = { points, index };
+  cornerTables.set(t, table);
+  return table;
+}
+
+/** The 8 scene corners of every tesseract cell, in `cellCorners4` order. */
+export function projectedCorners(t: TesseractSurface, placer: Placer): Vec3[][] {
+  const { points, index } = cornerTable(t);
+  const at = points.map((p) => placer.place(p).pos);
+  const out: Vec3[][] = [];
+  for (let c = 0; c < t.cellCount; c++) {
+    const corners: Vec3[] = [];
+    for (let i = 0; i < 8; i++) corners.push(at[index[c * 8 + i] as number] as Vec3);
+    out.push(corners);
+  }
+  return out;
+}
+
 /** Build the 3D board of a node. */
 export function buildSceneModel(input: SceneInput, opts: SceneOptions = {}): SceneModel {
   const { topology, board } = input;
   const mode = viewModeOf(topology, opts);
   const placer = placerFor(topology, opts);
+  const corners =
+    mode === 'schlegel' ? projectedCorners(topology as TesseractSurface, placer) : null;
   const cells: Placement[] = [];
   for (let c = 0; c < topology.cellCount; c++) {
     const { pos, scale } = placer.place(placer.centre(c), c);
-    cells.push({ cell: c, pos, size: scale });
+    const shape = corners?.[c];
+    cells.push(
+      shape === undefined
+        ? { cell: c, pos, size: scale }
+        : { cell: c, pos, size: scale, corners: shape },
+    );
   }
   const marks: MarkInstance[] = [];
   for (let c = 0; c < topology.cellCount; c++) {

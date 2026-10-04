@@ -5,6 +5,9 @@
  * instances may show the same cell: Phase B's ghost copies register one instance per copy, and
  * hovering any of them resolves to the source cell.
  *
+ * In the Schlegel diagram the cells are picked by their true (skewed) shapes, merged into one
+ * mesh: a hit there reports a triangle, which {@link pickHit} turns into the cell's id.
+ *
  * The raycast is done in *layers* in priority order (see {@link pickCell}): the visible marks
  * first, then the invisible cell boxes. Without that, the box of an empty cell in front would
  * steal the hover from a mark the player is visibly pointing at inside the cube.
@@ -51,6 +54,27 @@ export class PickTable {
 export interface PickHit {
   readonly instanceId?: number | undefined;
   readonly distance: number;
+}
+
+/** A raw three.js intersection: an instance of an InstancedMesh, or a triangle of a mesh. */
+export interface RawHit {
+  readonly instanceId?: number | undefined;
+  readonly faceIndex?: number | null | undefined;
+  readonly distance: number;
+}
+
+/**
+ * The pick id of a raw hit. An instanced layer reports its instance; a merged layer of
+ * `trianglesPerItem` triangles per item (> 0) reports a triangle, which belongs to item
+ * `⌊face / trianglesPerItem⌋`.
+ */
+export function pickHit(hit: RawHit, trianglesPerItem = 0): PickHit {
+  if (trianglesPerItem <= 0) return { instanceId: hit.instanceId, distance: hit.distance };
+  const face = hit.faceIndex;
+  return {
+    instanceId: face == null ? undefined : Math.floor(face / trianglesPerItem),
+    distance: hit.distance,
+  };
 }
 
 export interface PickLayer {

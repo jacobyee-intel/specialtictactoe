@@ -49,7 +49,7 @@ import {
 } from './controls';
 import { DEFAULT_PLANES4, type Planes4 } from './four';
 import { createMaterials, type Materials } from './materials';
-import { pickCell } from './picking';
+import { pickCell, pickHit } from './picking';
 import { GHOST_LAYER, HoverBox, buildScene, type BoardScene } from './scene';
 import {
   buildSceneModel,
@@ -139,6 +139,8 @@ export interface BoardViewDebug {
   readonly ghosts: { copies: number; cells: number; marks: number } | null;
   /** Ghost copies highlighted with the hovered cell. */
   readonly hoverCopies: number;
+  /** The drawn corners of the hover hexahedron (Schlegel diagram), else null. */
+  readonly hoverCorners: number[][] | null;
   /** The F of each copy, read back from the rendered instance matrices (world boxes). */
   readonly landmarks: { offset: number[]; boxes: { min: number[]; max: number[] }[] }[];
   readonly win: { paths: number[][][] } | null;
@@ -366,6 +368,7 @@ export class BoardView {
               ),
             },
       hoverCopies: this.hoverBox.copyCount,
+      hoverCorners: this.hoverBox.corners,
       landmarks: this.readLandmarks(),
       win: m?.win == null ? null : { paths: m.win.paths.map((path) => path.map((q) => [...q])) },
       wires: (m?.wires.length ?? 0) / 6,
@@ -401,6 +404,23 @@ export class BoardView {
   /** A cell's scene position (E2E). */
   debugCell(cell: CellId): Vec3 | null {
     return this.model?.cells[cell]?.pos ?? null;
+  }
+
+  /** A cell's projected corners in the Schlegel diagram (E2E), else null. */
+  debugCorners(cell: CellId): number[][] | null {
+    return this.model?.cells[cell]?.corners?.map((p) => [...p]) ?? null;
+  }
+
+  /** The pick ray through a client (page) point, in the scene (E2E). */
+  debugRay(x: number, y: number): { origin: number[]; direction: number[] } {
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new Vector2(
+      ((x - rect.left) / rect.width) * 2 - 1,
+      -((y - rect.top) / rect.height) * 2 + 1,
+    );
+    const ray = new Raycaster();
+    ray.setFromCamera(ndc, this.camera);
+    return { origin: ray.ray.origin.toArray(), direction: ray.ray.direction.toArray() };
   }
 
   /** Every ghost cell with its source cell, copy offset and screen point (E2E). */
@@ -771,9 +791,14 @@ export class BoardView {
     if (this.board === null) return;
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const cell = pickCell(
-      this.board.pickLayers.map(({ mesh, table }) => ({
+      this.board.pickLayers.map(({ mesh, table, trianglesPerItem }) => ({
         table,
-        hits: mesh.count === 0 ? [] : this.raycaster.intersectObject(mesh, false),
+        hits:
+          mesh.count === 0
+            ? []
+            : this.raycaster
+                .intersectObject(mesh, false)
+                .map((hit) => pickHit(hit, trianglesPerItem)),
       })),
     );
     this.setHover(cell);
@@ -800,7 +825,8 @@ const samePlanes = (a: Planes4, b: Planes4) =>
 /**
  * Dev-only test hook: `window.__board3d.view()` is the live view (camera, frame times, mode, 4D
  * angles, ghosts, landmarks, tracer) and `memory()` the shared renderer's live GPU resources,
- * which must return to zero between views. `set4D` and `autoRotate` drive the 4D view.
+ * which must return to zero between views. `set4D` and `autoRotate` drive the 4D view;
+ * `cellCorners` and `ray` let the E2E check the Schlegel hover shapes and picking.
  */
 function installDebugHook(): void {
   const w = window as unknown as { __board3d?: object };
@@ -816,5 +842,7 @@ function installDebugHook(): void {
       return at == null ? null : (current?.screenOf(at) ?? null);
     },
     ghostScreen: () => current?.ghostScreen() ?? [],
+    cellCorners: (cell: number) => current?.debugCorners(cell) ?? null,
+    ray: (x: number, y: number) => current?.debugRay(x, y) ?? null,
   };
 }

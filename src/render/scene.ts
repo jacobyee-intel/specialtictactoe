@@ -3,7 +3,8 @@
  * geometry and materials needs no WebGL), so the build is smoke-tested without a browser.
  *
  * Draw calls are kept few and independent of N: one `LineSegments` for the whole cell grid, one
- * `LineSegments2` for the outline, one `InstancedMesh` per mark kind, one for the pick boxes.
+ * `LineSegments2` for the outline, one `InstancedMesh` per mark kind, one for the pick boxes
+ * (in the Schlegel diagram: one merged mesh of the cells' true, skewed shapes).
  * Only the rare things (received marks, threats, the last move, the win tube) are small extra
  * objects.
  *
@@ -32,6 +33,7 @@ import {
   Matrix4,
   Mesh,
   Quaternion,
+  Sphere,
   SphereGeometry,
   Vector3,
   type Material,
@@ -40,6 +42,14 @@ import {
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import type { InterleavedBufferAttribute } from 'three';
+import { schlegelRadius } from './four';
+import {
+  HEX_TRIANGLES,
+  hexEdgeIndices,
+  hexOrientation,
+  hexTriangles,
+  writeHex,
+} from './hexahedron';
 import type { Materials } from './materials';
 import { PickTable } from './picking';
 import { ResourceRegistry } from './registry';
@@ -65,8 +75,10 @@ export const RENDER_ORDER = { hover: 3 } as const;
 export const GHOST_LAYER = 1;
 
 export interface PickLayerObject {
-  readonly mesh: InstancedMesh;
+  readonly mesh: InstancedMesh | Mesh;
   readonly table: PickTable;
+  /** A merged mesh (the Schlegel pick hexahedra): triangles per table entry. */
+  readonly trianglesPerItem?: number;
 }
 
 export interface BoardScene {
@@ -80,7 +92,10 @@ export interface BoardScene {
     readonly wires: LineSegments;
     readonly outline: LineSegments2;
     readonly marks: readonly [InstancedMesh, InstancedMesh];
-    readonly cells: InstancedMesh;
+    /** The cell pick boxes (cubic spaces, cover and net), or null in the Schlegel diagram. */
+    readonly cells: InstancedMesh | null;
+    /** The Schlegel diagram's pick hexahedra, one per cell, merged; null elsewhere. */
+    readonly cellHexes: Mesh | null;
     /** Baked meshes; `geometry.userData.copies` is the number of glyphs in each. */
     readonly ghostMarks: readonly [Mesh, Mesh] | null;
     readonly landmark: readonly [InstancedMesh, Mesh] | null;
@@ -103,11 +118,10 @@ export interface BoardScene {
 /**
  * Pick boxes are cell-sized in the cubic spaces and the net (hovering the solid cube finds its
  * surface cell). In the Schlegel diagram the near cube's cells enclose all the others, so there
- * the boxes are mark-sized, leaving gaps through which the inner cubes can be hovered.
+ * each cell's true shape is shrunk towards its centroid by this factor, leaving gaps through
+ * which the inner cubes can be hovered.
  */
-function pickScale(model: SceneModel): number {
-  return model.mode === 'schlegel' ? MARK_SIZE : 1;
-}
+export const SCHLEGEL_PICK_SHRINK = MARK_SIZE;
 
 const matrix = new Matrix4();
 const quaternion = new Quaternion();
@@ -234,6 +248,33 @@ export function bakeGeometry(src: BufferGeometry, matrices: readonly Matrix4[]):
   return g;
 }
 
+/**
+ * The Schlegel pick shapes: one hexahedron (8 vertices, 12 triangles) per cell in one geometry,
+ * so triangle t belongs to cell ⌊t / 12⌋. The index never changes; a 4D turn rewrites only the
+ * positions (see {@link writeSchlegelPicks}). The mesh is never drawn, only raycast on the CPU.
+ */
+export function schlegelPickGeometry(cellCount: number, n: number): BufferGeometry {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array(cellCount * 24), 3));
+  const index = new Uint32Array(cellCount * 36);
+  for (let c = 0; c < cellCount; c++) index.set(hexTriangles(1, c * 8), c * 36);
+  geometry.setIndex(new BufferAttribute(index, 1));
+  // Every 4D orientation projects into this ball, so the raycast's bound is never recomputed.
+  geometry.boundingSphere = new Sphere(new Vector3(), schlegelRadius(n) * 1.01);
+  return geometry;
+}
+
+/** Write each cell's corners, shrunk towards its centroid, into the pick geometry (in place). */
+export function writeSchlegelPicks(geometry: BufferGeometry, cells: readonly Placement[]): void {
+  const attr = geometry.getAttribute('position');
+  const out = attr.array as Float32Array;
+  for (let c = 0; c < cells.length; c++) {
+    const corners = (cells[c] as Placement).corners;
+    if (corners !== undefined) writeHex(corners, SCHLEGEL_PICK_SHRINK, out, c * 8);
+  }
+  attr.needsUpdate = true;
+}
+
 /** Three orthogonal great circles: the wire version of a sphere. */
 function ringsGeometry(radius: number, segments = 32): BufferGeometry {
   const points: number[] = [];
@@ -345,15 +386,33 @@ export function buildScene(
     }
   });
 
-  const cells = instancedMesh(box, materials.pick, model.cells.length, registry);
-  cells.name = 'pick-cells';
-  cells.visible = false;
-  writers.push((m) =>
-    writeInstances(cells, m.cells.length, (i) =>
-      placeMatrix(m.cells[i] as Placement, pickScale(m)),
-    ),
-  );
-  parts.push(...marks, cells);
+  let cells: InstancedMesh | null = null;
+  let cellHexes: Mesh | null = null;
+  let cellLayer: PickLayerObject;
+  if (model.mode === 'schlegel') {
+    const hexes = schlegelPickGeometry(model.cells.length, model.n);
+    g(hexes);
+    writers.push((m) => writeSchlegelPicks(hexes, m.cells));
+    cellHexes = new Mesh(hexes, materials.pickHex);
+    cellHexes.name = 'pick-cells';
+    cellHexes.visible = false;
+    cellLayer = {
+      mesh: cellHexes,
+      table: PickTable.identity(model.cells.length),
+      trianglesPerItem: HEX_TRIANGLES,
+    };
+    parts.push(...marks, cellHexes);
+  } else {
+    const boxes = instancedMesh(box, materials.pick, model.cells.length, registry);
+    boxes.name = 'pick-cells';
+    boxes.visible = false;
+    writers.push((m) =>
+      writeInstances(boxes, m.cells.length, (i) => placeMatrix(m.cells[i] as Placement, 1)),
+    );
+    cells = boxes;
+    cellLayer = { mesh: boxes, table: PickTable.identity(model.cells.length) };
+    parts.push(...marks, boxes);
+  }
 
   const boxEdges = g(new EdgesGeometry(box));
   if (solidMarks(model, 0).length > 0) {
@@ -575,11 +634,11 @@ export function buildScene(
     pickLayers: [
       { mesh: marks[0], table: new PickTable(solidMarks(model, 0).map((m) => m.cell)) },
       { mesh: marks[1], table: new PickTable(solidMarks(model, 1).map((m) => m.cell)) },
-      { mesh: cells, table: PickTable.identity(model.cells.length) },
+      cellLayer,
       ...ghostLayers,
     ],
     ghostTable,
-    parts: { wires, outline, marks, cells, ghostMarks, landmark, trail, walker },
+    parts: { wires, outline, marks, cells, cellHexes, ghostMarks, landmark, trail, walker },
     refresh: (m) => {
       if (shapeOf(m) !== shape) return false;
       current = m;
@@ -598,12 +657,19 @@ export function buildScene(
 
 /**
  * The persistent hover highlight: a grey-30 box with a black edge outline on the hovered cell,
- * and the same box with grey-60 edges on each of its ghost copies (cover view).
+ * and the same box with grey-60 edges on each of its ghost copies (cover view). In the Schlegel
+ * diagram the cell is no cube, so the highlight is the hexahedron through its 8 projected
+ * corners instead: 6 quads of fill and 12 black edges.
  */
 export class HoverBox {
   readonly object = new Group();
   private readonly registry = new ResourceRegistry();
   private readonly main = new Group();
+  private readonly hex = new Group();
+  private readonly hexFill: BufferGeometry;
+  private readonly hexEdges: BufferGeometry;
+  /** The winding the fill's index has (see `hexOrientation`). */
+  private hexSign = 1;
   private readonly copies: Mesh;
   private readonly copyEdges: LineSegments;
   private readonly unitBox: BufferGeometry;
@@ -639,11 +705,26 @@ export class HoverBox {
     // The copies' highlight belongs to the ghost pass, under the fundamental cube.
     this.copies.layers.set(GHOST_LAYER);
     this.copyEdges.layers.set(GHOST_LAYER);
-    this.object.add(this.main, this.copies, this.copyEdges);
+    // The hexahedron: 8 corners rewritten on every show, its fill re-wound when it mirrors.
+    const hexGeometry = (index: number[]) => {
+      const geometry = this.registry.track(new BufferGeometry());
+      geometry.setAttribute('position', new BufferAttribute(new Float32Array(24), 3));
+      geometry.setIndex(index);
+      return geometry;
+    };
+    this.hexFill = hexGeometry(hexTriangles(1));
+    this.hexEdges = hexGeometry(hexEdgeIndices());
+    this.hex.add(
+      new Mesh(this.hexFill, materials.hoverFill),
+      new LineSegments(this.hexEdges, materials.hoverEdge),
+    );
+    this.hex.visible = false;
+    this.object.add(this.main, this.copies, this.copyEdges, this.hex);
     this.object.name = 'hover';
     this.object.visible = false;
     // Drawn after the board and the ghosts so the translucent fill blends over them.
     this.main.renderOrder = RENDER_ORDER.hover;
+    this.hex.renderOrder = RENDER_ORDER.hover;
     this.copies.renderOrder = RENDER_ORDER.hover;
   }
 
@@ -651,6 +732,10 @@ export class HoverBox {
   show(at: Placement | null, copies: readonly Placement[] = []): void {
     this.object.visible = at !== null;
     if (at === null) return;
+    const corners = at.corners;
+    this.main.visible = corners === undefined;
+    this.hex.visible = corners !== undefined;
+    if (corners !== undefined) this.showHex(corners);
     this.main.position.set(...at.pos);
     this.main.scale.setScalar(at.size);
     const list = copies.slice(0, HoverBox.MAX_COPIES);
@@ -669,6 +754,33 @@ export class HoverBox {
       this.unitEdges,
       this.unitEdges.getAttribute('position').count * list.length,
     );
+  }
+
+  private showHex(corners: readonly Vec3[]): void {
+    const attr = this.hexFill.getAttribute('position');
+    const out = attr.array as Float32Array;
+    for (let i = 0; i < 8; i++) out.set(corners[i] as Vec3, i * 3);
+    attr.needsUpdate = true;
+    const edges = this.hexEdges.getAttribute('position');
+    (edges.array as Float32Array).set(out);
+    edges.needsUpdate = true;
+    // The fill is seen from inside (back faces), so it must be wound outwards.
+    const sign = hexOrientation(out);
+    const index = this.hexFill.getIndex();
+    if (sign !== this.hexSign && index !== null) {
+      (index.array as Uint16Array).set(hexTriangles(sign));
+      index.needsUpdate = true;
+      this.hexSign = sign;
+    }
+    this.hexFill.computeBoundingSphere();
+    this.hexEdges.computeBoundingSphere();
+  }
+
+  /** The corners of the highlighted hexahedron (Schlegel diagram), for the debug hook. */
+  get corners(): number[][] | null {
+    if (!this.object.visible || !this.hex.visible) return null;
+    const attr = this.hexFill.getAttribute('position');
+    return Array.from({ length: 8 }, (_, i) => [attr.getX(i), attr.getY(i), attr.getZ(i)]);
   }
 
   /** How many ghost copies are highlighted (for the debug hook). */

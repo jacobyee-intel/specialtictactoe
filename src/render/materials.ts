@@ -6,6 +6,7 @@
 import {
   BackSide,
   Color,
+  DoubleSide,
   LineBasicMaterial,
   LineDashedMaterial,
   MeshBasicMaterial,
@@ -39,6 +40,11 @@ export interface Materials {
   readonly hoverEdge: LineBasicMaterial;
   /** Invisible pick targets (the mesh is hidden; raycasting ignores visibility). */
   readonly pick: MeshBasicMaterial;
+  /**
+   * The Schlegel diagram's pick hexahedra: both sides, because a projected cell is mirrored
+   * when it turns past edge-on in 4D, and the merged pick mesh is not re-wound every frame.
+   */
+  readonly pickHex: MeshBasicMaterial;
   /**
    * Ghost copies: the same glyphs at 35% strength, as opaque tints of the player colours (35%
    * of the accent on white). They are drawn in their own pass under the board (see
@@ -121,6 +127,7 @@ export function createMaterials(registry = new ResourceRegistry()): Materials {
     ),
     hoverEdge: t(new LineBasicMaterial({ color: color(COLORS.black) })),
     pick: t(new MeshBasicMaterial({ visible: false })),
+    pickHex: t(new MeshBasicMaterial({ visible: false, side: DoubleSide })),
     ghostMark: [ghost(COLORS.p1), ghost(COLORS.p2)],
     ghostMarkEdge: t(new LineBasicMaterial({ color: color(COLORS.white) })),
     landmark: t(new MeshBasicMaterial({ color: color(COLORS.black) })),

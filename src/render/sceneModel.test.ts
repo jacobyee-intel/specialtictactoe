@@ -8,6 +8,8 @@ import {
   type Topology,
   type TopologyId,
 } from '@/geometry';
+import { CAMERA_W_FACTOR, cellCorners4, project4to3, rotation4, type Planes4 } from './four';
+import { HEX_FACES } from './hexahedron';
 import { buildSceneModel, netToWorld, toWorld, type SceneInput, type Vec3 } from './sceneModel';
 
 function input(topology: Topology, extra: Partial<SceneInput> = {}): SceneInput {
@@ -187,6 +189,49 @@ describe('buildSceneModel: tesseract', () => {
         expect(c.pos[k]).toBeLessThan(model.bounds.max[k] as number);
       }
     }
+  });
+
+  it.each([
+    ['identity', { xw: 0, yw: 0, zw: 0 }],
+    ['XW 40°', { xw: (40 * Math.PI) / 180, yw: 0, zw: 0 }],
+    ['XW 80°, YW, ZW', { xw: (80 * Math.PI) / 180, yw: 0.3, zw: -1.2 }],
+  ] as [string, Planes4][])(
+    '%s: each cell carries its 8 projected corners, in cellCorners4 order',
+    (_, planes4) => {
+      const n = 3;
+      const topology = createTopology('tesseract', n);
+      const R = rotation4(planes4);
+      const model = buildSceneModel(input(topology, { board: Uint8Array.of(1) }), { planes4 });
+      for (let c = 0; c < topology.cellCount; c++) {
+        const corners = model.cells[c]?.corners ?? [];
+        const expected = cellCorners4(topology, c).map((p) =>
+          toWorld(project4to3(p, R, CAMERA_W_FACTOR * n).p),
+        );
+        expect(corners).toHaveLength(8);
+        corners.forEach((p, i) => p.forEach((v, k) => expect(v).toBeCloseTo(expected[i]![k]!, 12)));
+        // A central projection keeps the faces planar.
+        for (const [a, b, d, e] of HEX_FACES) {
+          const o = corners[a]!;
+          const [u, v, w] = [b, d, e].map((i) => corners[i]!.map((x, k) => x - o[k]!));
+          const det =
+            u![0]! * (v![1]! * w![2]! - v![2]! * w![1]!) -
+            u![1]! * (v![0]! * w![2]! - v![2]! * w![0]!) +
+            u![2]! * (v![0]! * w![1]! - v![1]! * w![0]!);
+          expect(Math.abs(det)).toBeLessThan(1e-9);
+        }
+      }
+      // Marks, the last move and threats keep the shape along with the uniform size.
+      expect(model.marks[0]?.corners).toBe(model.cells[0]?.corners);
+    },
+  );
+
+  it('carries no corners where cells are true cubes (cubic spaces, the net)', () => {
+    const tesseract = createTopology('tesseract', 3);
+    expect(buildSceneModel(input(tesseract), { net: true }).cells[0]?.corners).toBeUndefined();
+    expect(buildSceneModel(input(createTopology('flat', 3))).cells[0]?.corners).toBeUndefined();
+    const cover = buildSceneModel(input(createTopology('torus3', 3)), { ghosts: 'all' });
+    expect(cover.cells[0]?.corners).toBeUndefined();
+    expect(cover.ghosts?.cells[0]?.corners).toBeUndefined();
   });
 
   it('draws every win line as one path, bending on the ridges it crosses', () => {
